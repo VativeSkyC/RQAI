@@ -1,8 +1,12 @@
 
 const express = require('express');
 const { Pool } = require('pg');
+const bodyParser = require('body-parser');
 const app = express();
 const PORT = 5000;
+
+// Middleware
+app.use(bodyParser.json());
 
 // PostgreSQL Connection
 const pool = new Pool({
@@ -61,6 +65,72 @@ pool.connect()
 
 app.get('/', (req, res) => {
   res.json({ message: "AI Relationship Agent is running" });
+});
+
+// Register a new user
+app.post('/register', async (req, res) => {
+  const { email, password } = req.body;
+  
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email and password are required" });
+  }
+  
+  try {
+    const client = await pool.connect();
+    
+    // Check if user already exists
+    const checkUser = await client.query(
+      'SELECT * FROM users WHERE email = $1', 
+      [email]
+    );
+    
+    if (checkUser.rows.length > 0) {
+      client.release();
+      return res.status(400).json({ error: "Email already exists" });
+    }
+    
+    // Insert new user
+    await client.query(
+      'INSERT INTO users (email, password) VALUES ($1, $2)',
+      [email, password] // In a production app, password should be hashed
+    );
+    
+    client.release();
+    res.status(201).json({ message: "User registered" });
+  } catch (error) {
+    console.error('Registration error:', error.message);
+    res.status(500).json({ error: "Server error during registration" });
+  }
+});
+
+// Login user
+app.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+  
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email and password are required" });
+  }
+  
+  try {
+    const client = await pool.connect();
+    
+    // Check if user exists and password matches
+    const result = await client.query(
+      'SELECT * FROM users WHERE email = $1 AND password = $2', 
+      [email, password] // In a production app, password comparison would be different
+    );
+    
+    client.release();
+    
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
+    
+    res.json({ message: "Login successful", userId: result.rows[0].id });
+  } catch (error) {
+    console.error('Login error:', error.message);
+    res.status(500).json({ error: "Server error during login" });
+  }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
