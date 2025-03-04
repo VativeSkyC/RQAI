@@ -134,17 +134,27 @@ app.post('/login', async (req, res) => {
   }
 });
 
+// Create a /voice endpoint
+app.post('/voice', (req, res) => {
+  res.json({ message: "Voice endpoint is active" });
+});
+
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`Server running on port ${PORT}`);
   
   // Start ngrok
   try {
+    // Connect ngrok to the specific /voice route
     const url = await ngrok.connect({
       addr: PORT,
-      authtoken: process.env.NGROK_AUTH_TOKEN
+      authtoken: process.env.NGROK_AUTH_TOKEN,
+      subdomain: 'ai-relationship-agent',
+      onLogEvent: (message) => console.log(message)
     });
-    console.log(`Ngrok tunnel established at: ${url}`);
-    console.log('Share this URL to allow external access to your API');
+    
+    console.log(`Ngrok tunnel established!`);
+    console.log(`Voice endpoint accessible at: ${url}/voice`);
+    console.log('Use this URL for your Twilio webhook configuration');
   } catch (error) {
     console.error('Error establishing Ngrok tunnel:', error);
     console.log('Make sure NGROK_AUTH_TOKEN is set in your environment variables');
