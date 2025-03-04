@@ -134,9 +134,20 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// Create a /voice endpoint
+// Create a /voice endpoint for Twilio
 app.post('/voice', (req, res) => {
-  res.json({ message: "Voice endpoint is active" });
+  const twilio = require('twilio');
+  const twiml = new twilio.twiml.VoiceResponse();
+  
+  // Log the CallSid to the console
+  console.log('Incoming call received. CallSid:', req.body.CallSid);
+  
+  // Add a message to say to the caller
+  twiml.say('Welcome to the AI Relationship Agent. Please hold while we connect you.');
+  
+  // Set the content type to XML and send the TwiML response
+  res.type('text/xml');
+  res.send(twiml.toString());
 });
 
 app.listen(PORT, '0.0.0.0', async () => {
