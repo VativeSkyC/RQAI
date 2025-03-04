@@ -2,6 +2,7 @@
 const express = require('express');
 const { Pool } = require('pg');
 const bodyParser = require('body-parser');
+const ngrok = require('ngrok');
 const app = express();
 const PORT = 5000;
 
@@ -133,6 +134,19 @@ app.post('/login', async (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
   console.log(`Server running on port ${PORT}`);
+  
+  // Start ngrok
+  try {
+    const url = await ngrok.connect({
+      addr: PORT,
+      authtoken: process.env.NGROK_AUTH_TOKEN
+    });
+    console.log(`Ngrok tunnel established at: ${url}`);
+    console.log('Share this URL to allow external access to your API');
+  } catch (error) {
+    console.error('Error establishing Ngrok tunnel:', error);
+    console.log('Make sure NGROK_AUTH_TOKEN is set in your environment variables');
+  }
 });
