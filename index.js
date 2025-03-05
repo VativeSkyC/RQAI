@@ -41,9 +41,55 @@ const createTables = async () => {
       )
     `);
     
+    // Create contacts table if it doesn't exist
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS contacts (
+        id SERIAL PRIMARY KEY,
+        phone_number VARCHAR(15) UNIQUE NOT NULL,
+        user_id INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    // Check if intake_responses table exists
+    const tableCheckResult = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'intake_responses'
+      )
+    `);
+    
+    if (tableCheckResult.rows[0].exists) {
+      // Check if user_id column exists in intake_responses
+      const columnCheckResult = await client.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.columns 
+          WHERE table_name = 'intake_responses' AND column_name = 'user_id'
+        )
+      `);
+      
+      if (!columnCheckResult.rows[0].exists) {
+        // Add user_id column to intake_responses
+        await client.query(`
+          ALTER TABLE intake_responses ADD COLUMN user_id INTEGER REFERENCES users(id)
+        `);
+      }
+    } else {
+      // Create intake_responses table
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS intake_responses (
+          id SERIAL PRIMARY KEY,
+          contact_id INTEGER REFERENCES contacts(id),
+          user_id INTEGER REFERENCES users(id),
+          response_text VARCHAR,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+    }
+    
     // Commit the transaction
     await client.query('COMMIT');
-    console.log('Tables created');
+    console.log('Database schema updated for relationship management');
   } catch (error) {
     // Rollback in case of error
     await client.query('ROLLBACK');
