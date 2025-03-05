@@ -8,9 +8,11 @@ const PORT = 5000;
 // Middleware
 app.use(bodyParser.json());
 
-// PostgreSQL Connection
+// PostgreSQL Connection with improved stability settings
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  max: 10, // Maximum number of clients in the pool
+  idleTimeoutMillis: 30000, // How long a client is allowed to remain idle before being closed
 });
 
 // Function to create tables if they don't exist
@@ -88,14 +90,28 @@ const createTables = async () => {
   }
 };
 
-pool.connect()
-  .then(() => {
-    console.log('Connected to PostgreSQL');
-    return createTables();
-  })
-  .catch((error) => {
-    console.error('PostgreSQL connection error:', error.message);
-  });
+// Function to handle database connection with retry mechanism
+const connectToDatabase = () => {
+  pool.connect()
+    .then(() => {
+      console.log('Connected to PostgreSQL');
+      return createTables();
+    })
+    .catch((error) => {
+      console.error('PostgreSQL connection error:', error.message);
+      console.log('Attempting to reconnect in 5 seconds...');
+      setTimeout(connectToDatabase, 5000); // Try to reconnect after 5 seconds
+    });
+};
+
+// Initialize database connection
+connectToDatabase();
+
+// Handle pool errors to prevent application crash
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client', err);
+  connectToDatabase(); // Try to reconnect on unexpected errors
+});
 
 app.get('/', (req, res) => {
   res.json({ message: "AI Relationship Agent is running" });
@@ -193,8 +209,20 @@ app.post('/voice', (req, res) => {
 const keepAlive = () => {
   setInterval(() => {
     console.log("Keeping alive...");
-    require('http').get(`http://0.0.0.0:${PORT}/`);
-  }, 20000);
+    // Make request to external endpoint for more reliable keep-alive
+    require('https').get('https://httpbin.org/get', (res) => {
+      // Process response
+      let data = '';
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      res.on('end', () => {
+        // Successful keep-alive ping
+      });
+    }).on('error', (err) => {
+      console.error('Keep-alive request failed:', err.message);
+    });
+  }, 20000); // Every 20 seconds
 };
 
 app.listen(PORT, '0.0.0.0', async () => {
