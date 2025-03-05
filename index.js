@@ -291,8 +291,20 @@ app.post('/voice', (req, res) => {
   res.send(twiml.toString());
 });
 
+// Setup a keep-alive mechanism to prevent server shutdown
+const keepAlive = () => {
+  setInterval(() => {
+    console.log("Keeping alive...");
+    // Make a request to the server's own endpoint
+    require('http').get(`http://0.0.0.0:${PORT}/`);
+  }, 20000); // Every 20 seconds
+};
+
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`Server running on port ${PORT}`);
+  
+  // Start the keep-alive mechanism
+  keepAlive();
   
   // Start ngrok
   try {
