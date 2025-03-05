@@ -152,6 +152,7 @@ app.post('/register', async (req, res) => {
 
 // Login user
 app.post('/login', async (req, res) => {
+  const jwt = require('jsonwebtoken');
   const { email, password } = req.body;
   
   if (!email || !password) {
@@ -173,10 +174,104 @@ app.post('/login', async (req, res) => {
       return res.status(401).json({ error: "Invalid email or password" });
     }
     
-    res.json({ message: "Login successful", userId: result.rows[0].id });
+    const userId = result.rows[0].id;
+    
+    // Generate JWT token with user_id in payload
+    const token = jwt.sign(
+      { userId: userId },
+      process.env.JWT_SECRET || 'your-secret-key', // Use environment variable in production
+      { expiresIn: '24h' }
+    );
+    
+    res.json({ 
+      message: "Login successful", 
+      userId: userId,
+      token: token 
+    });
   } catch (error) {
     console.error('Login error:', error.message);
     res.status(500).json({ error: "Server error during login" });
+  }
+});
+
+// Middleware to verify JWT token
+const verifyToken = (req, res, next) => {
+  const jwt = require('jsonwebtoken');
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader) {
+    return res.status(403).json({ error: 'No token provided' });
+  }
+  
+  const token = authHeader.split(' ')[1]; // Format: "Bearer TOKEN"
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    req.userId = decoded.userId;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+};
+
+// Endpoint to receive data from Twilio
+app.post('/receive-data', verifyToken, async (req, res) => {
+  // Extract phone number from Twilio request
+  const phoneNumber = req.body.From;
+  const userResponse = req.body.Body; // Text message content
+  const userId = req.userId; // From JWT token
+  
+  if (!phoneNumber || !userResponse) {
+    return res.status(400).json({ error: "Phone number and response are required" });
+  }
+  
+  try {
+    const client = await pool.connect();
+    
+    // Start transaction
+    await client.query('BEGIN');
+    
+    // Check if contact exists, if not create one
+    let contactResult = await client.query(
+      'SELECT id FROM contacts WHERE phone_number = $1',
+      [phoneNumber]
+    );
+    
+    let contactId;
+    
+    if (contactResult.rows.length === 0) {
+      // Create new contact
+      const newContactResult = await client.query(
+        'INSERT INTO contacts (phone_number, user_id) VALUES ($1, $2) RETURNING id',
+        [phoneNumber, userId]
+      );
+      contactId = newContactResult.rows[0].id;
+    } else {
+      contactId = contactResult.rows[0].id;
+    }
+    
+    // Store the response in intake_responses
+    await client.query(
+      'INSERT INTO intake_responses (contact_id, user_id, response_text) VALUES ($1, $2, $3)',
+      [contactId, userId, userResponse]
+    );
+    
+    // Commit transaction
+    await client.query('COMMIT');
+    
+    // Log the data
+    console.log(`Data received - Phone: ${phoneNumber}, User ID: ${userId}, Response: ${userResponse}`);
+    
+    client.release();
+    res.json({ message: "Data received" });
+  } catch (error) {
+    // Rollback in case of error
+    const client = await pool.connect();
+    await client.query('ROLLBACK');
+    client.release();
+    
+    console.error('Error processing data:', error.message);
+    res.status(500).json({ error: "Server error while processing data" });
   }
 });
 
