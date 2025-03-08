@@ -331,8 +331,41 @@ app.post('/add-contact', verifyToken, async (req, res) => {
 });
 
 // Data reception endpoint from Eleven Labs
+// GET endpoint for testing receive-data (debugging purposes only)
+app.get('/receive-data', async (req, res) => {
+  console.log('DEBUG: Received GET request to /receive-data');
+  
+  try {
+    // Check recent calls for debugging
+    const client = await pool.connect();
+    const callLogResult = await client.query(
+      'SELECT call_sid, phone_number, status, created_at, processed_at FROM call_log ORDER BY created_at DESC LIMIT 5'
+    );
+    client.release();
+    
+    res.status(200).json({
+      message: 'This endpoint requires a POST request with callSid from Eleven Labs',
+      note: 'This GET handler is for debugging only',
+      recent_calls: callLogResult.rows,
+      expected_post_format: {
+        callSid: "CALL_SID_FROM_TWILIO",
+        communication_style: "Sample communication style",
+        goals: "Sample goals",
+        values: "Sample values",
+        professional_goals: "Sample professional goals",
+        partnership_expectations: "Sample partnership expectations",
+        raw_transcript: "Sample raw transcript"
+      }
+    });
+  } catch (error) {
+    console.error('Error in debug endpoint:', error.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.post('/receive-data', async (req, res) => {
   console.log('Received request to /receive-data from Eleven Labs');
+  console.log('Request body:', JSON.stringify(req.body, null, 2));
 
   // Handle both authentication methods: direct user requests with JWT and Eleven Labs callbacks
   let isElevenLabsCallback = false;
@@ -442,41 +475,7 @@ app.post('/receive-data', async (req, res) => {
 
         await client.query('COMMIT');
         console.log(`Successfully stored Eleven Labs data for contact ID ${contactId}, user ID ${userId}`);
-
-// GET endpoint for testing receive-data (debugging purposes only)
-app.get('/receive-data', async (req, res) => {
-  console.log('DEBUG: Received GET request to /receive-data');
-  
-  try {
-    // Check recent calls for debugging
-    const client = await pool.connect();
-    const callLogResult = await client.query(
-      'SELECT call_sid, phone_number, status, created_at, processed_at FROM call_log ORDER BY created_at DESC LIMIT 5'
-    );
-    client.release();
-    
-    res.status(200).json({
-      message: 'This endpoint requires a POST request with callSid from Eleven Labs',
-      note: 'This GET handler is for debugging only',
-      recent_calls: callLogResult.rows,
-      expected_post_format: {
-        callSid: "CALL_SID_FROM_TWILIO",
-        communication_style: "Sample communication style",
-        goals: "Sample goals",
-        values: "Sample values",
-        professional_goals: "Sample professional goals",
-        partnership_expectations: "Sample partnership expectations",
-        raw_transcript: "Sample raw transcript"
-      }
-    });
-  } catch (error) {
-    console.error('Error in debug endpoint:', error.message);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-
-
+        
         return res.status(200).json({ message: 'Data stored successfully' });
       } catch (error) {
         await client.query('ROLLBACK');
