@@ -333,18 +333,23 @@ const keepAlive = () => {
 };
 
 // Start server and ngrok tunnel
-app.listen(PORT, '0.0.0.0', async () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`You can access the web interface at: https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`);
+const server = app.listen(PORT, '0.0.0.0', async () => {
+  console.log('=======================================================');
+  console.log(`⚡ Server running on port ${PORT}`);
+  console.log(`🌐 Web interface: https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`);
   
   // Check if JWT_SECRET is set
   if (!process.env.JWT_SECRET) {
-    console.error('WARNING: JWT_SECRET environment variable is not set!');
-    console.error('Login functionality will not work without JWT_SECRET.');
-    console.error('Please set it in the Secrets tool (Environment Variables).');
+    console.error('⚠️ WARNING: JWT_SECRET environment variable is not set!');
+    console.error('⚠️ Login functionality will not work without JWT_SECRET.');
+    console.error('⚠️ Please set it in the Secrets tool (Environment Variables).');
+  } else {
+    console.log('✅ JWT_SECRET is configured');
   }
   
+  console.log('📊 Starting keep-alive service...');
   keepAlive();
+  
   try {
     const url = await ngrok.connect({
       addr: PORT,
