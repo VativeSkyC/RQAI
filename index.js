@@ -3,11 +3,15 @@ const { Pool } = require('pg');
 const bodyParser = require('body-parser');
 const ngrok = require('ngrok');
 const http = require('http');
+const path = require('path');
 const app = express();
 const PORT = 5000;
 
 // Middleware
 app.use(bodyParser.json());
+
+// Serve static files from the 'public' directory
+app.use(express.static(path.join(__dirname, 'public')));
 
 // PostgreSQL Connection
 const pool = new Pool({
@@ -151,8 +155,8 @@ pool.on('error', (err) => {
 
 connectToDatabase();
 
-// Root endpoint with simple login form
-app.get('/', (req, res) => {
+// Original interface moved to /old-interface route
+app.get('/old-interface', (req, res) => {
   res.send(`
     <html>
       <head>
