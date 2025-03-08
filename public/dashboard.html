@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -30,6 +31,7 @@
             padding: 20px;
             border-radius: 8px;
             margin-bottom: 30px;
+            display: none; /* Hidden by default */
         }
         input, button {
             margin: 5px 0;
@@ -55,6 +57,9 @@
         .logout-btn {
             background: #f44336;
         }
+        .add-contact-btn {
+            margin-bottom: 20px;
+        }
     </style>
 </head>
 <body>
@@ -70,7 +75,9 @@
         <p><strong>Authentication:</strong> <span id="authStatus">Not authenticated</span></p>
     </div>
 
-    <div class="contact-form">
+    <button id="toggleFormBtn" class="add-contact-btn">+ Add New Contact</button>
+
+    <div id="contactFormContainer" class="contact-form">
         <h2>Add New Contact</h2>
         <form id="addContactForm">
             <div>
@@ -85,6 +92,7 @@
                 <input type="url" id="linkedinUrl" placeholder="LinkedIn URL (optional)">
             </div>
             <button type="submit">Add Contact</button>
+            <button type="button" id="cancelBtn">Cancel</button>
         </form>
         <div id="formMessage"></div>
     </div>
@@ -112,6 +120,21 @@
 
             // Load contacts (you'll implement this function later)
             // loadContacts();
+        });
+
+        // Toggle contact form visibility
+        document.getElementById('toggleFormBtn').addEventListener('click', () => {
+            const formContainer = document.getElementById('contactFormContainer');
+            formContainer.style.display = 'block';
+            document.getElementById('toggleFormBtn').style.display = 'none';
+        });
+
+        // Hide form on cancel
+        document.getElementById('cancelBtn').addEventListener('click', () => {
+            document.getElementById('contactFormContainer').style.display = 'none';
+            document.getElementById('toggleFormBtn').style.display = 'block';
+            document.getElementById('addContactForm').reset();
+            document.getElementById('formMessage').textContent = '';
         });
 
         // Handle logout
@@ -154,6 +177,12 @@
                 if (response.ok) {
                     formMessage.textContent = data.message;
                     document.getElementById('addContactForm').reset();
+                    // Hide form after successful submission
+                    setTimeout(() => {
+                        document.getElementById('contactFormContainer').style.display = 'none';
+                        document.getElementById('toggleFormBtn').style.display = 'block';
+                        formMessage.textContent = '';
+                    }, 3000);
                     // Reload contacts (you'll implement this function later)
                     // loadContacts();
                 } else {

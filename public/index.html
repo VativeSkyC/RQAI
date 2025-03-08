@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -10,18 +11,40 @@
             max-width: 800px;
             margin: 0 auto;
             padding: 20px;
-            line-height: 1.6; /* Retained from original */
+            line-height: 1.6;
         }
         h1 {
             color: #333;
             border-bottom: 2px solid #eee;
-            padding-bottom: 10px; /* Retained from original */
+            padding-bottom: 10px;
         }
-        .form-container {
+        .auth-container {
             margin-bottom: 30px;
-            padding: 20px;
             border: 1px solid #ddd;
             border-radius: 5px;
+            overflow: hidden;
+        }
+        .auth-tabs {
+            display: flex;
+            background: #f5f5f5;
+        }
+        .auth-tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            flex: 1;
+            text-align: center;
+            border-bottom: 2px solid transparent;
+        }
+        .auth-tab.active {
+            background: white;
+            border-bottom: 2px solid #4CAF50;
+        }
+        .auth-form {
+            padding: 20px;
+            display: none;
+        }
+        .auth-form.active {
+            display: block;
         }
         input {
             margin-bottom: 10px;
@@ -34,14 +57,12 @@
             color: white;
             border: none;
             cursor: pointer;
+            width: 100%;
         }
-        #tokenDisplay {
-            margin-top: 20px;
-            padding: 10px;
-            background: #f5f5f5;
-            word-break: break-all;
+        .message {
+            margin-top: 10px;
+            padding: 5px;
         }
-        /*About section styling retained from original*/
         .card {
             background: #f9f9f9;
             border-radius: 8px;
@@ -49,7 +70,7 @@
             margin-bottom: 20px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
-        ul{
+        ul {
             list-style-type: disc;
             padding-left: 20px;
         }
@@ -58,25 +79,29 @@
 <body>
     <h1>AI Relationship Agent</h1>
 
-    <div class="form-container">
-        <h2>Register</h2>
-        <form id="registerForm">
-            <input type="email" id="registerEmail" placeholder="Email" required>
-            <input type="password" id="registerPassword" placeholder="Password" required>
-            <button type="submit">Register</button>
-        </form>
-        <div id="registerMessage"></div>
-    </div>
+    <div class="auth-container">
+        <div class="auth-tabs">
+            <div class="auth-tab active" id="loginTab">Login</div>
+            <div class="auth-tab" id="registerTab">Register</div>
+        </div>
 
-    <div class="form-container">
-        <h2>Login</h2>
-        <form id="loginForm">
-            <input type="email" id="loginEmail" placeholder="Email" required>
-            <input type="password" id="loginPassword" placeholder="Password" required>
-            <button type="submit">Login</button>
-        </form>
-        <div id="loginMessage"></div>
-        <div id="tokenDisplay"></div>
+        <div class="auth-form active" id="loginForm">
+            <form id="loginFormElement">
+                <input type="email" id="loginEmail" placeholder="Email" required>
+                <input type="password" id="loginPassword" placeholder="Password" required>
+                <button type="submit">Login</button>
+            </form>
+            <div id="loginMessage" class="message"></div>
+        </div>
+
+        <div class="auth-form" id="registerForm">
+            <form id="registerFormElement">
+                <input type="email" id="registerEmail" placeholder="Email" required>
+                <input type="password" id="registerPassword" placeholder="Password" required>
+                <button type="submit">Register</button>
+            </form>
+            <div id="registerMessage" class="message"></div>
+        </div>
     </div>
 
     <div class="card">
@@ -93,10 +118,27 @@
     </div>
 
     <script>
-        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+        // Tab switching functionality
+        document.getElementById('loginTab').addEventListener('click', () => {
+            document.getElementById('loginTab').classList.add('active');
+            document.getElementById('registerTab').classList.remove('active');
+            document.getElementById('loginForm').classList.add('active');
+            document.getElementById('registerForm').classList.remove('active');
+        });
+
+        document.getElementById('registerTab').addEventListener('click', () => {
+            document.getElementById('registerTab').classList.add('active');
+            document.getElementById('loginTab').classList.remove('active');
+            document.getElementById('registerForm').classList.add('active');
+            document.getElementById('loginForm').classList.remove('active');
+        });
+
+        // Register form submission
+        document.getElementById('registerFormElement').addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('registerEmail').value;
             const password = document.getElementById('registerPassword').value;
+            const registerMessage = document.getElementById('registerMessage');
 
             try {
                 const response = await fetch('/register', {
@@ -106,16 +148,26 @@
                 });
 
                 const data = await response.json();
-                document.getElementById('registerMessage').innerText = data.message || data.error;
+                registerMessage.innerText = data.message || data.error;
+                
+                if (response.ok) {
+                    // Switch to login tab after successful registration
+                    setTimeout(() => {
+                        document.getElementById('loginTab').click();
+                        document.getElementById('loginEmail').value = email;
+                    }, 1500);
+                }
             } catch (error) {
-                document.getElementById('registerMessage').innerText = 'Error: ' + error.message;
+                registerMessage.innerText = 'Error: ' + error.message;
             }
         });
 
-        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        // Login form submission
+        document.getElementById('loginFormElement').addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('loginEmail').value;
             const password = document.getElementById('loginPassword').value;
+            const loginMessage = document.getElementById('loginMessage');
 
             try {
                 const response = await fetch('/login', {
@@ -125,7 +177,7 @@
                 });
 
                 const data = await response.json();
-                document.getElementById('loginMessage').innerText = data.message || data.error;
+                loginMessage.innerText = data.message || data.error;
 
                 if (data.token) {
                     // Store token and userId in localStorage for later use
@@ -136,7 +188,16 @@
                     window.location.href = '/dashboard.html';
                 }
             } catch (error) {
-                document.getElementById('loginMessage').innerText = 'Error: ' + error.message;
+                loginMessage.innerText = 'Error: ' + error.message;
+            }
+        });
+
+        // Check if user is already logged in
+        document.addEventListener('DOMContentLoaded', () => {
+            const token = localStorage.getItem('token');
+            if (token) {
+                // Already logged in, redirect to dashboard
+                window.location.href = '/dashboard.html';
             }
         });
     </script>
