@@ -597,6 +597,12 @@ setInterval(async () => {
   }
 }, 30 * 60 * 1000); // Every 30 minutes
 
+// Ping endpoint for uptime monitoring
+app.get('/ping', (req, res) => {
+  console.log('Received ping from UptimeRobot at', new Date().toISOString());
+  res.status(200).send('OK');
+});
+
 // Start server and ngrok tunnel
 const server = app.listen(PORT, '0.0.0.0', async () => {
   console.log('=======================================================');
