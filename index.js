@@ -896,23 +896,53 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
   keepAlive();
 
   try {
-    const url = await ngrok.connect({
-      addr: PORT,
-      authtoken: process.env.NGROK_AUTH_TOKEN,
-      subdomain: 'ai-relationship-agent',
-      onLogEvent: (message) => console.log(message),
-    });
-    console.log('=== NGROK CONNECTION DETAILS ===');
-    console.log(`Ngrok tunnel established: ${url}`);
-    console.log(`Main site: ${url}`);
-    console.log(`Dashboard: ${url}/dashboard.html`);
-    console.log(`Voice endpoint: ${url}/voice`);
-    console.log(`Data endpoint: ${url}/receive-data`);
-    console.log('Set Twilio webhook to:', `${url}/voice`);
-    console.log('Set ElevenLabs webhook to:', `${url}/receive-data`);
-    console.log('===============================');
+    // Check if NGROK_AUTH_TOKEN is set
+    if (!process.env.NGROK_AUTH_TOKEN) {
+      console.warn('⚠️ NGROK_AUTH_TOKEN is not set. Using default ngrok settings without custom subdomain.');
+      const url = await ngrok.connect(PORT);
+      console.log('=== NGROK CONNECTION DETAILS ===');
+      console.log(`Ngrok tunnel established: ${url}`);
+      console.log(`Main site: ${url}`);
+      console.log(`Dashboard: ${url}/dashboard.html`);
+      console.log(`Voice endpoint: ${url}/voice`);
+      console.log(`Data endpoint: ${url}/receive-data`);
+      console.log('Set Twilio webhook to:', `${url}/voice`);
+      console.log('Set ElevenLabs webhook to:', `${url}/receive-data`);
+      console.log('===============================');
+    } else {
+      const url = await ngrok.connect({
+        addr: PORT,
+        authtoken: process.env.NGROK_AUTH_TOKEN,
+        subdomain: 'ai-relationship-agent',
+        onLogEvent: (message) => console.log(message),
+      });
+      console.log('=== NGROK CONNECTION DETAILS ===');
+      console.log(`Ngrok tunnel established: ${url}`);
+      console.log(`Main site: ${url}`);
+      console.log(`Dashboard: ${url}/dashboard.html`);
+      console.log(`Voice endpoint: ${url}/voice`);
+      console.log(`Data endpoint: ${url}/receive-data`);
+      console.log('Set Twilio webhook to:', `${url}/voice`);
+      console.log('Set ElevenLabs webhook to:', `${url}/receive-data`);
+      console.log('===============================');
+    }
   } catch (error) {
     console.error('Error establishing Ngrok tunnel:', error.message);
-    console.log('Ensure NGROK_AUTH_TOKEN is set in your environment variables');
+    console.log('Server is still running locally without ngrok tunnel');
+    console.log('You can access it via the Replit URL');
+  }
+});
+
+// Add error handler for process
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  console.log('Server will continue running if possible');
+});
+
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`⚠️ Port ${PORT} is already in use. Try restarting your repl or using a different port.`);
+  } else {
+    console.error('Server error:', error);
   }
 });
