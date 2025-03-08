@@ -2,25 +2,25 @@ const express = require('express');
 const { Pool } = require('pg');
 const bodyParser = require('body-parser');
 const ngrok = require('ngrok');
+const http = require('http');
 const app = express();
 const PORT = 5000;
 
 // Middleware
 app.use(bodyParser.json());
 
-// PostgreSQL Connection with improved stability settings
+// PostgreSQL Connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: 10, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000, // How long a client is allowed to remain idle before being closed
+  max: 10,
+  idleTimeoutMillis: 30000,
 });
 
-// Function to create tables if they don't exist
+// Create database tables
 const createTables = async () => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -28,7 +28,6 @@ const createTables = async () => {
         password VARCHAR(255) NOT NULL
       )
     `);
-
     await client.query(`
       CREATE TABLE IF NOT EXISTS relationships (
         id SERIAL PRIMARY KEY,
@@ -38,7 +37,6 @@ const createTables = async () => {
         check_in_cadence VARCHAR(50)
       )
     `);
-
     await client.query(`
       CREATE TABLE IF NOT EXISTS contacts (
         id SERIAL PRIMARY KEY,
@@ -47,14 +45,12 @@ const createTables = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-
     const tableCheckResult = await client.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_name = 'intake_responses'
       )
     `);
-
     if (tableCheckResult.rows[0].exists) {
       const columnCheckResult = await client.query(`
         SELECT EXISTS (
@@ -62,7 +58,6 @@ const createTables = async () => {
           WHERE table_name = 'intake_responses' AND column_name = 'user_id'
         )
       `);
-
       if (!columnCheckResult.rows[0].exists) {
         await client.query(`
           ALTER TABLE intake_responses ADD COLUMN user_id INTEGER REFERENCES users(id)
@@ -79,7 +74,6 @@ const createTables = async () => {
         )
       `);
     }
-
     await client.query('COMMIT');
     console.log('Database schema updated for relationship management');
   } catch (error) {
@@ -90,7 +84,7 @@ const createTables = async () => {
   }
 };
 
-// Function to handle database connection with retry mechanism
+// Database connection with retry
 const connectToDatabase = () => {
   pool.connect()
     .then(() => {
@@ -99,104 +93,123 @@ const connectToDatabase = () => {
     })
     .catch((error) => {
       console.error('PostgreSQL connection error:', error.message);
-      console.log('Attempting to reconnect in 5 seconds...');
-      setTimeout(connectToDatabase, 5000); // Try to reconnect after 5 seconds
+      console.log('Retrying in 5 seconds...');
+      setTimeout(connectToDatabase, 5000);
     });
 };
 
-// Initialize database connection
+// Handle pool errors
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client:', err);
+  connectToDatabase();
+});
+
 connectToDatabase();
 
-// Handle pool errors to prevent application crash
-pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
-  connectToDatabase(); // Try to reconnect on unexpected errors
-});
-
+// Root endpoint
 app.get('/', (req, res) => {
-  res.json({ message: "AI Relationship Agent is running" });
+  res.json({ message: 'AI Relationship Agent is running' });
 });
 
+// User registration
 app.post('/register', async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
+  if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
   try {
     const client = await pool.connect();
     const checkUser = await client.query('SELECT * FROM users WHERE email = $1', [email]);
     if (checkUser.rows.length > 0) {
       client.release();
-      return res.status(400).json({ error: "Email already exists" });
+      return res.status(400).json({ error: 'Email already exists' });
     }
     await client.query('INSERT INTO users (email, password) VALUES ($1, $2)', [email, password]);
     client.release();
-    res.status(201).json({ message: "User registered" });
+    res.status(201).json({ message: 'User registered' });
   } catch (error) {
     console.error('Registration error:', error.message);
-    res.status(500).json({ error: "Server error during registration" });
+    res.status(500).json({ error: 'Server error during registration' });
   }
 });
 
+// User login with JWT
 const jwt = require('jsonwebtoken');
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
+  if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
   try {
     const client = await pool.connect();
     const result = await client.query('SELECT * FROM users WHERE email = $1 AND password = $2', [email, password]);
     client.release();
-    if (result.rows.length === 0) return res.status(401).json({ error: "Invalid email or password" });
+    if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid email or password' });
     const userId = result.rows[0].id;
     const token = jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '24h' });
-    res.json({ message: "Login successful", userId, token });
+    res.json({ message: 'Login successful', userId, token });
   } catch (error) {
     console.error('Login error:', error.message);
-    res.status(500).json({ error: "Server error during login" });
+    res.status(500).json({ error: 'Server error during login' });
   }
 });
 
+// JWT verification middleware
 const verifyToken = (req, res, next) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(403).json({ error: 'No token provided' });
+  if (!authHeader) {
+    console.log('No authorization header provided');
+    return res.status(403).json({ error: 'No token provided' });
+  }
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.userId = decoded.userId;
+    console.log('Token verified, proceeding with userId:', req.userId);
     next();
   } catch (error) {
+    console.error('Token verification failed:', error.message);
     return res.status(401).json({ error: 'Unauthorized' });
   }
 };
 
+// Data reception endpoint
 app.post('/receive-data', verifyToken, async (req, res) => {
+  console.log('Received request to /receive-data');
   const phoneNumber = req.body.From;
-  const userResponse = req.body.userResponse; // Fixed to match webhook schema
+  const userResponse = req.body.userResponse;
   const userId = req.userId;
-  if (!phoneNumber || !userResponse) return res.status(400).json({ error: "Phone number and response are required" });
+  if (!phoneNumber || !userResponse) {
+    console.log('Validation failed - Missing phoneNumber or userResponse', { phoneNumber, userResponse });
+    return res.status(400).json({ error: 'Phone number and response are required' });
+  }
   try {
     const client = await pool.connect();
     await client.query('BEGIN');
     let contactResult = await client.query('SELECT id FROM contacts WHERE phone_number = $1', [phoneNumber]);
     let contactId;
     if (contactResult.rows.length === 0) {
-      const newContactResult = await client.query('INSERT INTO contacts (phone_number, user_id) VALUES ($1, $2) RETURNING id', [phoneNumber, userId]);
+      const newContactResult = await client.query(
+        'INSERT INTO contacts (phone_number, user_id) VALUES ($1, $2) RETURNING id',
+        [phoneNumber, userId]
+      );
       contactId = newContactResult.rows[0].id;
     } else {
       contactId = contactResult.rows[0].id;
     }
-    await client.query('INSERT INTO intake_responses (contact_id, user_id, response_text) VALUES ($1, $2, $3)', [contactId, userId, userResponse]);
+    await client.query(
+      'INSERT INTO intake_responses (contact_id, user_id, response_text) VALUES ($1, $2, $3)',
+      [contactId, userId, userResponse]
+    );
     await client.query('COMMIT');
     console.log(`Data received - Phone: ${phoneNumber}, User ID: ${userId}, Response: ${userResponse}`);
     client.release();
-    res.json({ message: "Data received" });
+    res.json({ message: 'Data received' });
   } catch (error) {
-    const client = await pool.connect();
     await client.query('ROLLBACK');
     client.release();
     console.error('Error processing data:', error.message);
-    res.status(500).json({ error: "Server error while processing data" });
+    res.status(500).json({ error: 'Server error while processing data' });
   }
 });
 
+// Twilio voice endpoint
 app.post('/voice', (req, res) => {
   const twilio = require('twilio');
   const twiml = new twilio.twiml.VoiceResponse();
@@ -206,18 +219,15 @@ app.post('/voice', (req, res) => {
   res.send(twiml.toString());
 });
 
+// Improved keep-alive mechanism
 const keepAlive = () => {
   setInterval(() => {
-    console.log("Keeping alive...");
-    // Make request to external endpoint for more reliable keep-alive
-    require('https').get('https://httpbin.org/get', (res) => {
-      // Process response
+    console.log('Keeping alive...');
+    http.get(`http://0.0.0.0:${PORT}/`, (res) => {
       let data = '';
-      res.on('data', (chunk) => {
-        data += chunk;
-      });
+      res.on('data', (chunk) => (data += chunk));
       res.on('end', () => {
-        // Successful keep-alive ping
+        console.log('Keep-alive successful - Server pinged');
       });
     }).on('error', (err) => {
       console.error('Keep-alive request failed:', err.message);
@@ -225,6 +235,7 @@ const keepAlive = () => {
   }, 20000); // Every 20 seconds
 };
 
+// Start server and ngrok tunnel
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`Server running on port ${PORT}`);
   keepAlive();
@@ -233,14 +244,14 @@ app.listen(PORT, '0.0.0.0', async () => {
       addr: PORT,
       authtoken: process.env.NGROK_AUTH_TOKEN,
       subdomain: 'ai-relationship-agent',
-      onLogEvent: (message) => console.log(message)
+      onLogEvent: (message) => console.log(message),
     });
-    console.log(`Ngrok tunnel established!`);
+    console.log('Ngrok tunnel established!');
     console.log(`Voice endpoint accessible at: ${url}/voice`);
-    console.log('Use this URL for your Twilio webhook configuration');
+    console.log('Set Twilio webhook to:', `${url}/voice`);
+    console.log('Set ElevenLabs webhook to:', `${url}/receive-data`);
   } catch (error) {
-    console.error('Error establishing Ngrok tunnel:', error);
-    console.log('Make sure NGROK_AUTH_TOKEN is set in your environment variables');
+    console.error('Error establishing Ngrok tunnel:', error.message);
+    console.log('Ensure NGROK_AUTH_TOKEN is set in your environment variables');
   }
 });
-
