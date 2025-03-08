@@ -45,6 +45,14 @@ const createTables = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS temp_calls (
+        id SERIAL PRIMARY KEY,
+        call_sid VARCHAR(50) UNIQUE NOT NULL,
+        phone_number VARCHAR(15) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
     const tableCheckResult = await client.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -305,14 +313,39 @@ app.post('/receive-data', verifyToken, async (req, res) => {
   }
 });
 
-// Twilio voice endpoint
-app.post('/voice', (req, res) => {
-  const twilio = require('twilio');
-  const twiml = new twilio.twiml.VoiceResponse();
-  console.log('Incoming call received. CallSid:', req.body.CallSid);
-  twiml.say('Welcome to the AI Relationship Agent. Please hold while we connect you.');
-  res.type('text/xml');
-  res.send(twiml.toString());
+// Twilio voice endpoint with Eleven Labs integration
+app.post('/voice', async (req, res) => {
+  const { From, CallSid } = req.body;
+  console.log('Incoming call received. CallSid:', CallSid, 'From:', From);
+  
+  try {
+    // Store call details temporarily
+    const client = await pool.connect();
+    await client.query(
+      'INSERT INTO temp_calls (call_sid, phone_number, created_at) VALUES ($1, $2, NOW())',
+      [CallSid, From]
+    );
+    client.release();
+    
+    // Redirect to Eleven Labs
+    const twiml = `
+      <?xml version="1.0" encoding="UTF-8"?>
+      <Response>
+        <Redirect method="POST">https://api.us.elevenlabs.io/twilio/inbound_call</Redirect>
+      </Response>
+    `;
+    
+    res.type('text/xml').send(twiml);
+    console.log('Call redirected to Eleven Labs');
+  } catch (error) {
+    console.error('Error in voice endpoint:', error.message);
+    // Fallback in case of error
+    const twilio = require('twilio');
+    const twiml = new twilio.twiml.VoiceResponse();
+    twiml.say('We are experiencing technical difficulties. Please try again later.');
+    res.type('text/xml');
+    res.send(twiml.toString());
+  }
 });
 
 // Improved keep-alive mechanism
