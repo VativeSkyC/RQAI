@@ -336,30 +336,75 @@ app.get('/receive-data', async (req, res) => {
   console.log('DEBUG: Received GET request to /receive-data');
   
   try {
-    // Check recent calls for debugging
+    // Check if the database is accessible
     const client = await pool.connect();
-    const callLogResult = await client.query(
-      'SELECT call_sid, phone_number, status, created_at, processed_at FROM call_log ORDER BY created_at DESC LIMIT 5'
-    );
-    client.release();
     
-    res.status(200).json({
-      message: 'This endpoint requires a POST request with callSid from Eleven Labs',
-      note: 'This GET handler is for debugging only',
-      recent_calls: callLogResult.rows,
-      expected_post_format: {
-        callSid: "CALL_SID_FROM_TWILIO",
-        communication_style: "Sample communication style",
-        goals: "Sample goals",
-        values: "Sample values",
-        professional_goals: "Sample professional goals",
-        partnership_expectations: "Sample partnership expectations",
-        raw_transcript: "Sample raw transcript"
+    try {
+      // Check if tables exist first to avoid errors
+      const tableCheckResult = await client.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_name = 'call_log'
+        )
+      `);
+      
+      const tableExists = tableCheckResult.rows[0].exists;
+      let recentCalls = [];
+      
+      if (tableExists) {
+        const callLogResult = await client.query(
+          'SELECT call_sid, phone_number, status, created_at, processed_at FROM call_log ORDER BY created_at DESC LIMIT 5'
+        );
+        recentCalls = callLogResult.rows;
       }
+      
+      // Return a test response for easier debugging
+      res.status(200).json({
+        status: "success",
+        message: 'This endpoint requires a POST request with callSid from Eleven Labs',
+        note: 'This GET handler is for debugging only',
+        server_time: new Date().toISOString(),
+        database_connected: true,
+        call_log_table_exists: tableExists,
+        recent_calls: recentCalls,
+        ngrok_url: req.headers['x-forwarded-proto'] ? 
+                  `${req.headers['x-forwarded-proto']}://${req.headers.host}` : 
+                  "Unknown ngrok URL",
+        expected_post_format: {
+          callSid: "CALL_SID_FROM_TWILIO",
+          communication_style: "Sample communication style",
+          goals: "Sample goals",
+          values: "Sample values",
+          professional_goals: "Sample professional goals",
+          partnership_expectations: "Sample partnership expectations",
+          raw_transcript: "Sample raw transcript"
+        }
+      });
+    } catch (dbError) {
+      console.error('Database error:', dbError.message);
+      res.status(500).json({ 
+        status: "error", 
+        message: 'Database error', 
+        error: dbError.message,
+        database_connected: false,
+        ngrok_url: req.headers['x-forwarded-proto'] ? 
+                  `${req.headers['x-forwarded-proto']}://${req.headers.host}` : 
+                  "Unknown ngrok URL"
+      });
+    } finally {
+      client.release();
+    }
+  } catch (connectionError) {
+    console.error('Database connection error:', connectionError.message);
+    res.status(500).json({ 
+      status: "error", 
+      message: 'Database connection error', 
+      error: connectionError.message,
+      database_connected: false,
+      ngrok_url: req.headers['x-forwarded-proto'] ? 
+                `${req.headers['x-forwarded-proto']}://${req.headers.host}` : 
+                "Unknown ngrok URL"
     });
-  } catch (error) {
-    console.error('Error in debug endpoint:', error.message);
-    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -896,40 +941,65 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
   keepAlive();
 
   try {
-    // Check if NGROK_AUTH_TOKEN is set
-    if (!process.env.NGROK_AUTH_TOKEN) {
-      console.warn('⚠️ NGROK_AUTH_TOKEN is not set. Using default ngrok settings without custom subdomain.');
-      const url = await ngrok.connect(PORT);
-      console.log('=== NGROK CONNECTION DETAILS ===');
-      console.log(`Ngrok tunnel established: ${url}`);
-      console.log(`Main site: ${url}`);
-      console.log(`Dashboard: ${url}/dashboard.html`);
-      console.log(`Voice endpoint: ${url}/voice`);
-      console.log(`Data endpoint: ${url}/receive-data`);
-      console.log('Set Twilio webhook to:', `${url}/voice`);
-      console.log('Set ElevenLabs webhook to:', `${url}/receive-data`);
-      console.log('===============================');
+    // Simplified ngrok setup approach
+    let ngrokOptions = {
+      addr: PORT,
+      onLogEvent: (message) => console.log(`NGROK LOG: ${message}`),
+    };
+    
+    // Add authtoken and subdomain if available
+    if (process.env.NGROK_AUTH_TOKEN) {
+      ngrokOptions.authtoken = process.env.NGROK_AUTH_TOKEN;
+      
+      // Only try to use subdomain if we have an auth token
+      if (process.env.NGROK_SUBDOMAIN || 'ai-relationship-agent') {
+        ngrokOptions.subdomain = process.env.NGROK_SUBDOMAIN || 'ai-relationship-agent';
+      }
     } else {
-      const url = await ngrok.connect({
-        addr: PORT,
-        authtoken: process.env.NGROK_AUTH_TOKEN,
-        subdomain: 'ai-relationship-agent',
-        onLogEvent: (message) => console.log(message),
-      });
-      console.log('=== NGROK CONNECTION DETAILS ===');
-      console.log(`Ngrok tunnel established: ${url}`);
-      console.log(`Main site: ${url}`);
-      console.log(`Dashboard: ${url}/dashboard.html`);
-      console.log(`Voice endpoint: ${url}/voice`);
-      console.log(`Data endpoint: ${url}/receive-data`);
-      console.log('Set Twilio webhook to:', `${url}/voice`);
-      console.log('Set ElevenLabs webhook to:', `${url}/receive-data`);
-      console.log('===============================');
+      console.warn('⚠️ NGROK_AUTH_TOKEN is not set. Using random URL.');
     }
+    
+    // Connect to ngrok with our options
+    console.log('Attempting to establish ngrok tunnel with options:', JSON.stringify({
+      ...ngrokOptions,
+      authtoken: ngrokOptions.authtoken ? '***HIDDEN***' : undefined
+    }));
+    
+    const url = await ngrok.connect(ngrokOptions);
+    
+    console.log('\n\n');
+    console.log('================================================================');
+    console.log(`✅ NGROK TUNNEL SUCCESSFULLY ESTABLISHED!`);
+    console.log('================================================================');
+    console.log(`📝 IMPORTANT URLS:`);
+    console.log(`🌍 Main Site: ${url}`);
+    console.log(`📊 Dashboard: ${url}/dashboard.html`);
+    console.log(`🔈 Voice Webhook: ${url}/voice`);
+    console.log(`📥 Data Webhook: ${url}/receive-data`);
+    console.log('----------------------------------------------------------------');
+    console.log(`Set Twilio Webhook URL to: ${url}/voice`);
+    console.log(`Set ElevenLabs Webhook URL to: ${url}/receive-data`);
+    console.log('================================================================\n\n');
+    
+    // Store ngrok URL in global variable for use throughout the application
+    global.ngrokUrl = url;
   } catch (error) {
-    console.error('Error establishing Ngrok tunnel:', error.message);
-    console.log('Server is still running locally without ngrok tunnel');
-    console.log('You can access it via the Replit URL');
+    console.error('\n\n⚠️ ERROR ESTABLISHING NGROK TUNNEL:', error.message);
+    
+    if (error.message.includes('account may not run more than 1 online ngrok processes')) {
+      console.log('\n👉 You already have an ngrok tunnel running elsewhere.');
+      console.log('👉 Please close other ngrok instances before starting a new one.');
+    } else if (error.message.includes('subdomain')) {
+      console.log('\n👉 The subdomain "ai-relationship-agent" is currently in use.');
+      console.log('👉 Try setting a different NGROK_SUBDOMAIN in your environment variables.');
+    } else if (error.message.includes('authtoken')) {
+      console.log('\n👉 Your NGROK_AUTH_TOKEN may be invalid or expired.');
+      console.log('👉 Get a new token at https://dashboard.ngrok.com/get-started/your-authtoken');
+    }
+    
+    console.log('\n⚙️ Server is still running locally at:');
+    console.log(`🔗 Local URL: http://localhost:${PORT}`);
+    console.log(`🔗 Replit URL: https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`);
   }
 });
 
