@@ -523,6 +523,68 @@ app.get('/ping', (req, res) => {
   res.status(200).send('OK');
 });
 
+// Get contacts endpoint
+app.get('/get-contacts', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const client = await pool.connect();
+    const result = await client.query(
+      'SELECT id, first_name, last_name, phone_number, company_name, linkedin_url, created_at FROM contacts WHERE user_id = $1 ORDER BY created_at DESC',
+      [userId]
+    );
+    client.release();
+    res.json({ contacts: result.rows });
+  } catch (error) {
+    console.error('Error fetching contacts:', error.message);
+    res.status(500).json({ error: 'Failed to retrieve contacts' });
+  }
+});
+
+// Update contact endpoint
+app.put('/update-contact/:id', verifyToken, async (req, res) => {
+  try {
+    const contactId = req.params.id;
+    const userId = req.userId;
+    const { first_name, last_name, phone_number, company_name, linkedin_url } = req.body;
+    
+    // Validate required fields
+    if (!first_name || !last_name || !phone_number) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    const client = await pool.connect();
+    
+    // Verify contact belongs to user
+    const checkResult = await client.query(
+      'SELECT id FROM contacts WHERE id = $1 AND user_id = $2',
+      [contactId, userId]
+    );
+    
+    if (checkResult.rows.length === 0) {
+      client.release();
+      return res.status(403).json({ error: 'Contact not found or access denied' });
+    }
+    
+    // Update contact
+    await client.query(
+      `UPDATE contacts 
+       SET first_name = $1, last_name = $2, phone_number = $3, company_name = $4, linkedin_url = $5
+       WHERE id = $6 AND user_id = $7`,
+      [first_name, last_name, phone_number, company_name || null, linkedin_url || null, contactId, userId]
+    );
+    
+    client.release();
+    res.json({ message: 'Contact updated successfully' });
+  } catch (error) {
+    console.error('Error updating contact:', error.message);
+    // Handle specific PostgreSQL errors
+    if (error.code === '23505') { // Unique violation
+      return res.status(400).json({ error: 'Phone number already exists in contacts' });
+    }
+    res.status(500).json({ error: 'Failed to update contact', details: error.message });
+  }
+});
+
 // Start server and ngrok tunnel
 const server = app.listen(PORT, '0.0.0.0', async () => {
   console.log('=======================================================');

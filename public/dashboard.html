@@ -54,11 +54,45 @@
             margin-bottom: 15px;
             border-radius: 5px;
         }
+        .contact-card-header {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+        }
+        .contact-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .edit-btn {
+            background: #2196F3;
+        }
+        .save-btn {
+            background: #4CAF50;
+        }
+        .cancel-btn {
+            background: #ff9800;
+        }
         .logout-btn {
             background: #f44336;
         }
         .add-contact-btn {
             margin-bottom: 20px;
+        }
+        .edit-mode {
+            display: none;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 30px;
+            background: #f5f5f5;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
         }
     </style>
 </head>
@@ -98,8 +132,8 @@
     </div>
 
     <h2>Your Contacts</h2>
-    <div id="contactsList">
-        <p>Loading contacts...</p>
+    <div id="contactsList" class="loading">
+        Loading contacts...
     </div>
 
     <script>
@@ -118,8 +152,8 @@
             document.getElementById('userIdDisplay').textContent = userId;
             document.getElementById('authStatus').textContent = 'Authenticated';
 
-            // Load contacts (you'll implement this function later)
-            // loadContacts();
+            // Load contacts
+            loadContacts();
         });
 
         // Toggle contact form visibility
@@ -183,8 +217,8 @@
                         document.getElementById('toggleFormBtn').style.display = 'block';
                         formMessage.textContent = '';
                     }, 3000);
-                    // Reload contacts (you'll implement this function later)
-                    // loadContacts();
+                    // Reload contacts
+                    loadContacts();
                 } else {
                     formMessage.textContent = data.error || 'Failed to add contact';
                 }
@@ -193,7 +227,155 @@
             }
         });
 
-        // Here you'll implement loadContacts() function to fetch and display contacts
+        // Function to load contacts
+        async function loadContacts() {
+            const contactsList = document.getElementById('contactsList');
+            contactsList.innerHTML = '<div class="loading">Loading contacts...</div>';
+            
+            try {
+                const response = await fetch('/get-contacts', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': 'Bearer ' + localStorage.getItem('token')
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    if (data.contacts && data.contacts.length > 0) {
+                        renderContacts(data.contacts);
+                    } else {
+                        contactsList.innerHTML = `
+                            <div class="empty-state">
+                                <h3>No contacts yet</h3>
+                                <p>Add your first contact to get started</p>
+                            </div>
+                        `;
+                    }
+                } else {
+                    contactsList.innerHTML = `<p>Error: ${data.error || 'Failed to load contacts'}</p>`;
+                }
+            } catch (error) {
+                contactsList.innerHTML = `<p>Error: ${error.message}</p>`;
+            }
+        }
+
+        // Function to render contacts
+        function renderContacts(contacts) {
+            const contactsList = document.getElementById('contactsList');
+            contactsList.innerHTML = '';
+            
+            contacts.forEach(contact => {
+                const contactCard = document.createElement('div');
+                contactCard.className = 'contact-card';
+                contactCard.id = `contact-${contact.id}`;
+                
+                // Format creation date
+                const createdDate = new Date(contact.created_at).toLocaleDateString();
+                
+                // Generate HTML for view mode
+                contactCard.innerHTML = `
+                    <div class="view-mode">
+                        <div class="contact-card-header">
+                            <h3>${contact.first_name} ${contact.last_name}</h3>
+                            <div class="contact-actions">
+                                <button class="edit-btn" onclick="editContact(${contact.id})">Edit</button>
+                            </div>
+                        </div>
+                        <p><strong>Phone:</strong> ${contact.phone_number}</p>
+                        ${contact.company_name ? `<p><strong>Company:</strong> ${contact.company_name}</p>` : ''}
+                        ${contact.linkedin_url ? `<p><strong>LinkedIn:</strong> <a href="${contact.linkedin_url}" target="_blank">${contact.linkedin_url}</a></p>` : ''}
+                        <p><strong>Added:</strong> ${createdDate}</p>
+                    </div>
+                    
+                    <div class="edit-mode edit-form">
+                        <div class="contact-card-header">
+                            <h3>Edit Contact</h3>
+                            <div class="contact-actions">
+                                <button class="save-btn" onclick="saveContact(${contact.id})">Save</button>
+                                <button class="cancel-btn" onclick="cancelEdit(${contact.id})">Cancel</button>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <input type="text" id="edit-first-name-${contact.id}" value="${contact.first_name}" placeholder="First Name" required>
+                            <input type="text" id="edit-last-name-${contact.id}" value="${contact.last_name}" placeholder="Last Name" required>
+                        </div>
+                        <div>
+                            <input type="tel" id="edit-phone-${contact.id}" value="${contact.phone_number}" placeholder="Phone Number (E.164 format)" required>
+                        </div>
+                        <div>
+                            <input type="text" id="edit-company-${contact.id}" value="${contact.company_name || ''}" placeholder="Company Name (optional)">
+                            <input type="url" id="edit-linkedin-${contact.id}" value="${contact.linkedin_url || ''}" placeholder="LinkedIn URL (optional)">
+                        </div>
+                        <div id="edit-message-${contact.id}" style="margin-top: 10px; color: red;"></div>
+                    </div>
+                `;
+                
+                contactsList.appendChild(contactCard);
+            });
+        }
+
+        // Global functions for contact editing
+        window.editContact = function(contactId) {
+            const card = document.getElementById(`contact-${contactId}`);
+            card.querySelector('.view-mode').style.display = 'none';
+            card.querySelector('.edit-mode').style.display = 'block';
+        };
+        
+        window.cancelEdit = function(contactId) {
+            const card = document.getElementById(`contact-${contactId}`);
+            card.querySelector('.view-mode').style.display = 'block';
+            card.querySelector('.edit-mode').style.display = 'none';
+            card.querySelector(`#edit-message-${contactId}`).textContent = '';
+        };
+        
+        window.saveContact = async function(contactId) {
+            const card = document.getElementById(`contact-${contactId}`);
+            const messageElement = card.querySelector(`#edit-message-${contactId}`);
+            messageElement.textContent = '';
+            
+            const firstName = card.querySelector(`#edit-first-name-${contactId}`).value;
+            const lastName = card.querySelector(`#edit-last-name-${contactId}`).value;
+            const phoneNumber = card.querySelector(`#edit-phone-${contactId}`).value;
+            const companyName = card.querySelector(`#edit-company-${contactId}`).value;
+            const linkedinUrl = card.querySelector(`#edit-linkedin-${contactId}`).value;
+            
+            // Basic validation
+            if (!firstName || !lastName || !phoneNumber) {
+                messageElement.textContent = 'First name, last name, and phone number are required';
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/update-contact/${contactId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + localStorage.getItem('token')
+                    },
+                    body: JSON.stringify({
+                        first_name: firstName,
+                        last_name: lastName,
+                        phone_number: phoneNumber,
+                        company_name: companyName,
+                        linkedin_url: linkedinUrl
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Reload the contacts to show updated data
+                    loadContacts();
+                } else {
+                    messageElement.textContent = data.error || 'Failed to update contact';
+                }
+            } catch (error) {
+                messageElement.textContent = 'Error: ' + error.message;
+            }
+        };
     </script>
 </body>
 </html>
