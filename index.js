@@ -29,7 +29,7 @@ const createTables = async () => {
         password VARCHAR(255) NOT NULL
       )
     `);
-    
+
     // Create relationships table
     await client.query(`
       CREATE TABLE IF NOT EXISTS relationships (
@@ -40,7 +40,7 @@ const createTables = async () => {
         check_in_cadence VARCHAR(50)
       )
     `);
-    
+
     // Create contacts table
     await client.query(`
       CREATE TABLE IF NOT EXISTS contacts (
@@ -54,7 +54,7 @@ const createTables = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    
+
     // Check if contacts table needs column updates
     const columnCheck = await client.query(`
       SELECT column_name 
@@ -62,7 +62,7 @@ const createTables = async () => {
       WHERE table_name = 'contacts' 
       AND column_name = 'first_name'
     `);
-    
+
     // If first_name doesn't exist, add all possibly missing columns
     if (columnCheck.rows.length === 0) {
       console.log('Migrating contacts table - adding missing columns');
@@ -74,7 +74,7 @@ const createTables = async () => {
         ADD COLUMN IF NOT EXISTS linkedin_url VARCHAR(255)
       `);
     }
-    
+
     // Create temp_calls table
     await client.query(`
       CREATE TABLE IF NOT EXISTS temp_calls (
@@ -272,72 +272,6 @@ app.post('/login', async (req, res) => {
     return res.status(500).json({ error: 'Server configuration error - JWT_SECRET not set' });
   }
 
-// Add contact endpoint with text message notification
-app.post('/add-contact', verifyToken, async (req, res) => {
-  try {
-    const { first_name, last_name, company_name, linkedin_url, phone_number } = req.body;
-    const userId = req.userId; // From the verifyToken middleware
-
-    // Validate required fields
-    if (!first_name || !last_name || !phone_number) {
-      return res.status(400).json({ error: 'Missing required fields (first_name, last_name, and phone_number are required)' });
-    }
-
-    // Validate phone number format (optional)
-    const phoneRegex = /^\+?[1-9]\d{1,14}$/; // Basic E.164 format check
-    if (!phoneRegex.test(phone_number)) {
-      return res.status(400).json({ error: 'Invalid phone number format. Please use E.164 format (e.g., +12125551234)' });
-    }
-
-    // Add contact to database
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      const result = await client.query(
-        `INSERT INTO contacts (first_name, last_name, company_name, linkedin_url, phone_number, user_id, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING id`,
-        [first_name, last_name, company_name || null, linkedin_url || null, phone_number, userId]
-      );
-      const contactId = result.rows[0].id;
-
-      // Send automated text if Twilio credentials are configured
-      if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
-        const twilioClient = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-        
-        await twilioClient.messages.create({
-          body: `Hi ${first_name}! Please call this number to connect with our AI Relationship Agent: ${process.env.TWILIO_PHONE_NUMBER}`,
-          from: process.env.TWILIO_PHONE_NUMBER,
-          to: phone_number
-        });
-        console.log(`Text message sent to ${phone_number}`);
-      } else {
-        console.log('Twilio credentials not configured - skipping text message');
-      }
-
-      await client.query('COMMIT');
-      console.log(`Contact added: ${first_name} ${last_name} (${phone_number}), ID: ${contactId}`);
-      res.status(201).json({ 
-        message: 'Contact added successfully', 
-        contact_id: contactId,
-        text_sent: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER)
-      });
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error; // Pass to outer catch block
-    } finally {
-      client.release();
-    }
-  } catch (error) {
-    console.error('Error adding contact:', error.message);
-    // Handle specific PostgreSQL errors
-    if (error.code === '23505') { // Unique violation
-      return res.status(400).json({ error: 'Phone number already exists in contacts' });
-    }
-    res.status(500).json({ error: 'Failed to add contact', details: error.message });
-  }
-});
-
-
   try {
     const client = await pool.connect();
     const result = await client.query('SELECT * FROM users WHERE email = $1 AND password = $2', [email, password]);
@@ -376,14 +310,79 @@ const verifyToken = (req, res, next) => {
   }
 };
 
+// Add contact endpoint with text message notification
+app.post('/add-contact', verifyToken, async (req, res) => {
+  try {
+    const { first_name, last_name, company_name, linkedin_url, phone_number } = req.body;
+    const userId = req.userId; // From the verifyToken middleware
+
+    // Validate required fields
+    if (!first_name || !last_name || !phone_number) {
+      return res.status(400).json({ error: 'Missing required fields (first_name, last_name, and phone_number are required)' });
+    }
+
+    // Validate phone number format (optional)
+    const phoneRegex = /^\+?[1-9]\d{1,14}$/; // Basic E.164 format check
+    if (!phoneRegex.test(phone_number)) {
+      return res.status(400).json({ error: 'Invalid phone number format. Please use E.164 format (e.g., +12125551234)' });
+    }
+
+    // Add contact to database
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query(
+        `INSERT INTO contacts (first_name, last_name, company_name, linkedin_url, phone_number, user_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING id`,
+        [first_name, last_name, company_name || null, linkedin_url || null, phone_number, userId]
+      );
+      const contactId = result.rows[0].id;
+
+      // Send automated text if Twilio credentials are configured
+      if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
+        const twilioClient = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+
+        await twilioClient.messages.create({
+          body: `Hi ${first_name}! Please call this number to connect with our AI Relationship Agent: ${process.env.TWILIO_PHONE_NUMBER}`,
+          from: process.env.TWILIO_PHONE_NUMBER,
+          to: phone_number
+        });
+        console.log(`Text message sent to ${phone_number}`);
+      } else {
+        console.log('Twilio credentials not configured - skipping text message');
+      }
+
+      await client.query('COMMIT');
+      console.log(`Contact added: ${first_name} ${last_name} (${phone_number}), ID: ${contactId}`);
+      res.status(201).json({ 
+        message: 'Contact added successfully', 
+        contact_id: contactId,
+        text_sent: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER)
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error; // Pass to outer catch block
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Error adding contact:', error.message);
+    // Handle specific PostgreSQL errors
+    if (error.code === '23505') { // Unique violation
+      return res.status(400).json({ error: 'Phone number already exists in contacts' });
+    }
+    res.status(500).json({ error: 'Failed to add contact', details: error.message });
+  }
+});
+
 // Data reception endpoint from Eleven Labs
 app.post('/receive-data', async (req, res) => {
   console.log('Received request to /receive-data from Eleven Labs');
-  
+
   // Handle both authentication methods: direct user requests with JWT and Eleven Labs callbacks
   let isElevenLabsCallback = false;
   let userId = null;
-  
+
   // Check if this is a verifiable Eleven Labs callback with callSid
   if (req.body.callSid) {
     isElevenLabsCallback = true;
@@ -404,7 +403,7 @@ app.post('/receive-data', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
   }
-  
+
   // Handle Eleven Labs callback data
   if (isElevenLabsCallback) {
     const { 
@@ -416,40 +415,40 @@ app.post('/receive-data', async (req, res) => {
       partnership_expectations, 
       raw_transcript 
     } = req.body;
-    
+
     console.log('Processing Eleven Labs data for callSid:', callSid);
 
     try {
       const client = await pool.connect();
-      
+
       try {
         await client.query('BEGIN');
-        
+
         // Match call to contact
         const callResult = await client.query('SELECT phone_number FROM temp_calls WHERE call_sid = $1', [callSid]);
-        
+
         if (callResult.rows.length === 0) {
           console.error('Call not found for callSid:', callSid);
           await client.query('ROLLBACK');
           return res.status(404).json({ error: 'Call not found' });
         }
-        
+
         const phoneNumber = callResult.rows[0].phone_number;
         console.log(`Found phone number ${phoneNumber} for callSid: ${callSid}`);
-        
+
         // Find the corresponding contact
         const contactResult = await client.query('SELECT id, user_id FROM contacts WHERE phone_number = $1', [phoneNumber]);
-        
+
         if (contactResult.rows.length === 0) {
           console.error('Contact not found for phone number:', phoneNumber);
           await client.query('ROLLBACK');
           return res.status(404).json({ error: 'Contact not found' });
         }
-        
+
         const contactId = contactResult.rows[0].id;
         userId = contactResult.rows[0].user_id;
         console.log(`Found contact (ID: ${contactId}) for user (ID: ${userId})`);
-        
+
         // Store call data
         await client.query(
           `INSERT INTO intake_responses (
@@ -467,13 +466,13 @@ app.post('/receive-data', async (req, res) => {
             raw_transcript || null
           ]
         );
-        
+
         // Clean up temp_calls
         await client.query('DELETE FROM temp_calls WHERE call_sid = $1', [callSid]);
-        
+
         await client.query('COMMIT');
         console.log(`Successfully stored Eleven Labs data for contact ID ${contactId}, user ID ${userId}`);
-        
+
         return res.status(200).json({ message: 'Data stored successfully' });
       } catch (error) {
         await client.query('ROLLBACK');
@@ -490,21 +489,21 @@ app.post('/receive-data', async (req, res) => {
   else {
     const phoneNumber = req.body.From;
     const userResponse = req.body.userResponse;
-    
+
     if (!phoneNumber || !userResponse) {
       console.log('Validation failed - Missing phoneNumber or userResponse', { phoneNumber, userResponse });
       return res.status(400).json({ error: 'Phone number and response are required' });
     }
-    
+
     try {
       const client = await pool.connect();
-      
+
       try {
         await client.query('BEGIN');
-        
+
         let contactResult = await client.query('SELECT id FROM contacts WHERE phone_number = $1', [phoneNumber]);
         let contactId;
-        
+
         if (contactResult.rows.length === 0) {
           const newContactResult = await client.query(
             'INSERT INTO contacts (phone_number, user_id) VALUES ($1, $2) RETURNING id',
@@ -514,15 +513,15 @@ app.post('/receive-data', async (req, res) => {
         } else {
           contactId = contactResult.rows[0].id;
         }
-        
+
         await client.query(
           'INSERT INTO intake_responses (contact_id, user_id, response_text) VALUES ($1, $2, $3)',
           [contactId, userId, userResponse]
         );
-        
+
         await client.query('COMMIT');
         console.log(`Data received - Phone: ${phoneNumber}, User ID: ${userId}, Response: ${userResponse}`);
-        
+
         return res.json({ message: 'Data received' });
       } catch (error) {
         await client.query('ROLLBACK');
