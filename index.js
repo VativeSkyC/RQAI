@@ -180,11 +180,10 @@ app.get('/', (req, res) => {
               document.getElementById('loginMessage').innerText = data.message || data.error;
               
               if (data.token) {
-                document.getElementById('tokenDisplay').innerHTML = `
-                  <h3>Your JWT Token:</h3>
+                document.getElementById('tokenDisplay').innerHTML = 
+                  `<h3>Your JWT Token:</h3>
                   <p>${data.token}</p>
-                  <p>UserId: ${data.userId}</p>
-                `;
+                  <p>UserId: ${data.userId}</p>`;
               }
             } catch (error) {
               document.getElementById('loginMessage').innerText = 'Error: ' + error.message;
