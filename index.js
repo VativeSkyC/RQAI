@@ -106,9 +106,94 @@ pool.on('error', (err) => {
 
 connectToDatabase();
 
-// Root endpoint
+// Root endpoint with simple login form
 app.get('/', (req, res) => {
-  res.json({ message: 'AI Relationship Agent is running' });
+  res.send(`
+    <html>
+      <head>
+        <title>AI Relationship Agent</title>
+        <style>
+          body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+          .form-container { margin-bottom: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
+          input { margin-bottom: 10px; padding: 8px; width: 100%; }
+          button { padding: 10px 15px; background: #4CAF50; color: white; border: none; cursor: pointer; }
+          #tokenDisplay { margin-top: 20px; padding: 10px; background: #f5f5f5; word-break: break-all; }
+        </style>
+      </head>
+      <body>
+        <h1>AI Relationship Agent</h1>
+        
+        <div class="form-container">
+          <h2>Register</h2>
+          <form id="registerForm">
+            <input type="email" id="registerEmail" placeholder="Email" required>
+            <input type="password" id="registerPassword" placeholder="Password" required>
+            <button type="submit">Register</button>
+          </form>
+          <div id="registerMessage"></div>
+        </div>
+        
+        <div class="form-container">
+          <h2>Login</h2>
+          <form id="loginForm">
+            <input type="email" id="loginEmail" placeholder="Email" required>
+            <input type="password" id="loginPassword" placeholder="Password" required>
+            <button type="submit">Login</button>
+          </form>
+          <div id="loginMessage"></div>
+          <div id="tokenDisplay"></div>
+        </div>
+        
+        <script>
+          document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('registerEmail').value;
+            const password = document.getElementById('registerPassword').value;
+            
+            try {
+              const response = await fetch('/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+              });
+              
+              const data = await response.json();
+              document.getElementById('registerMessage').innerText = data.message || data.error;
+            } catch (error) {
+              document.getElementById('registerMessage').innerText = 'Error: ' + error.message;
+            }
+          });
+          
+          document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            try {
+              const response = await fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+              });
+              
+              const data = await response.json();
+              document.getElementById('loginMessage').innerText = data.message || data.error;
+              
+              if (data.token) {
+                document.getElementById('tokenDisplay').innerHTML = `
+                  <h3>Your JWT Token:</h3>
+                  <p>${data.token}</p>
+                  <p>UserId: ${data.userId}</p>
+                `;
+              }
+            } catch (error) {
+              document.getElementById('loginMessage').innerText = 'Error: ' + error.message;
+            }
+          });
+        </script>
+      </body>
+    </html>
+  `);
 });
 
 // User registration
