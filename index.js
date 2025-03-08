@@ -561,6 +561,16 @@ const keepAlive = () => {
   }, 20000); // Every 20 seconds
 };
 
+// Scheduled cleanup for temp_calls table
+setInterval(async () => {
+  try {
+    const result = await pool.query('DELETE FROM temp_calls WHERE created_at < NOW() - INTERVAL \'1 hour\'');
+    console.log(`Cleaned up temp_calls table: ${result.rowCount} old records removed`);
+  } catch (error) {
+    console.error('Error cleaning up temp_calls:', error.message);
+  }
+}, 30 * 60 * 1000); // Every 30 minutes
+
 // Start server and ngrok tunnel
 const server = app.listen(PORT, '0.0.0.0', async () => {
   console.log('=======================================================');
