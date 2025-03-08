@@ -5,7 +5,9 @@ const ngrok = require('ngrok');
 const http = require('http');
 const path = require('path');
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
+const FALLBACK_PORTS = [5001, 8000, 8080, 3000];
+let activePort = PORT;
 
 // Middleware
 app.use(bodyParser.json());
@@ -913,11 +915,13 @@ app.post('/send-intake-sms/:contactId', verifyToken, async (req, res) => {
   }
 });
 
-// Start server and ngrok tunnel
-const server = app.listen(PORT, '0.0.0.0', async () => {
-  console.log('=======================================================');
-  console.log(`⚡ Server running on port ${PORT}`);
-  console.log(`🌐 Web interface: https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`);
+// Start server and ngrok tunnel with port fallback
+function startServer(port, fallbackIndex = 0) {
+  const server = app.listen(port, '0.0.0.0', async () => {
+    activePort = port;
+    console.log('=======================================================');
+    console.log(`⚡ Server running on port ${port}`);
+    console.log(`🌐 Web interface: https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`);
 
   // Check if JWT_SECRET is set
   if (!process.env.JWT_SECRET) {
@@ -962,9 +966,12 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
     // Connect to ngrok with our options
     console.log('Attempting to establish ngrok tunnel with options:', JSON.stringify({
       ...ngrokOptions,
+      addr: activePort, // Use the active port that was successfully bound
       authtoken: ngrokOptions.authtoken ? '***HIDDEN***' : undefined
     }));
     
+    // Update the port in options to use the active port
+    ngrokOptions.addr = activePort;
     const url = await ngrok.connect(ngrokOptions);
     
     console.log('\n\n');
@@ -1010,9 +1017,18 @@ process.on('uncaughtException', (error) => {
 });
 
 server.on('error', (error) => {
-  if (error.code === 'EADDRINUSE') {
-    console.error(`⚠️ Port ${PORT} is already in use. Try restarting your repl or using a different port.`);
-  } else {
-    console.error('Server error:', error);
-  }
-});
+    if (error.code === 'EADDRINUSE') {
+      if (fallbackIndex < FALLBACK_PORTS.length) {
+        console.log(`⚠️ Port ${port} is already in use. Trying alternative port ${FALLBACK_PORTS[fallbackIndex]}...`);
+        startServer(FALLBACK_PORTS[fallbackIndex], fallbackIndex + 1);
+      } else {
+        console.error('❌ All ports are in use. Please restart your repl or kill the running processes.');
+      }
+    } else {
+      console.error('Server error:', error);
+    }
+  });
+}
+
+// Start the server with the primary port
+startServer(PORT);
