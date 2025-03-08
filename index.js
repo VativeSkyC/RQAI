@@ -77,6 +77,12 @@ const createTables = async () => {
           id SERIAL PRIMARY KEY,
           contact_id INTEGER REFERENCES contacts(id),
           user_id INTEGER REFERENCES users(id),
+          communication_style TEXT,
+          goals TEXT,
+          values TEXT,
+          professional_goals TEXT,
+          partnership_expectations TEXT,
+          raw_transcript TEXT,
           response_text VARCHAR,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -130,7 +136,7 @@ app.get('/', (req, res) => {
       </head>
       <body>
         <h1>AI Relationship Agent</h1>
-        
+
         <div class="form-container">
           <h2>Register</h2>
           <form id="registerForm">
@@ -140,7 +146,7 @@ app.get('/', (req, res) => {
           </form>
           <div id="registerMessage"></div>
         </div>
-        
+
         <div class="form-container">
           <h2>Login</h2>
           <form id="loginForm">
@@ -151,42 +157,42 @@ app.get('/', (req, res) => {
           <div id="loginMessage"></div>
           <div id="tokenDisplay"></div>
         </div>
-        
+
         <script>
           document.getElementById('registerForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('registerEmail').value;
             const password = document.getElementById('registerPassword').value;
-            
+
             try {
               const response = await fetch('/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password })
               });
-              
+
               const data = await response.json();
               document.getElementById('registerMessage').innerText = data.message || data.error;
             } catch (error) {
               document.getElementById('registerMessage').innerText = 'Error: ' + error.message;
             }
           });
-          
+
           document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('loginEmail').value;
             const password = document.getElementById('loginPassword').value;
-            
+
             try {
               const response = await fetch('/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password })
               });
-              
+
               const data = await response.json();
               document.getElementById('loginMessage').innerText = data.message || data.error;
-              
+
               if (data.token) {
                 document.getElementById('tokenDisplay').innerHTML = 
                   "<h3>Your JWT Token:</h3>" +
@@ -228,13 +234,13 @@ const jwt = require('jsonwebtoken');
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
-  
+
   // Check if JWT_SECRET is set
   if (!process.env.JWT_SECRET) {
     console.error('JWT_SECRET environment variable is not set!');
     return res.status(500).json({ error: 'Server configuration error - JWT_SECRET not set' });
   }
-  
+
   try {
     const client = await pool.connect();
     const result = await client.query('SELECT * FROM users WHERE email = $1 AND password = $2', [email, password]);
@@ -317,7 +323,7 @@ app.post('/receive-data', verifyToken, async (req, res) => {
 app.post('/voice', async (req, res) => {
   const { From, CallSid } = req.body;
   console.log('Incoming call received. CallSid:', CallSid, 'From:', From);
-  
+
   try {
     // Store call details temporarily
     const client = await pool.connect();
@@ -326,7 +332,7 @@ app.post('/voice', async (req, res) => {
       [CallSid, From]
     );
     client.release();
-    
+
     // Redirect to Eleven Labs
     const twiml = `
       <?xml version="1.0" encoding="UTF-8"?>
@@ -334,7 +340,7 @@ app.post('/voice', async (req, res) => {
         <Redirect method="POST">https://api.us.elevenlabs.io/twilio/inbound_call</Redirect>
       </Response>
     `;
-    
+
     res.type('text/xml').send(twiml);
     console.log('Call redirected to Eleven Labs');
   } catch (error) {
@@ -369,7 +375,7 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
   console.log('=======================================================');
   console.log(`⚡ Server running on port ${PORT}`);
   console.log(`🌐 Web interface: https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`);
-  
+
   // Check if JWT_SECRET is set
   if (!process.env.JWT_SECRET) {
     console.error('⚠️ WARNING: JWT_SECRET environment variable is not set!');
@@ -378,10 +384,10 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
   } else {
     console.log('✅ JWT_SECRET is configured');
   }
-  
+
   console.log('📊 Starting keep-alive service...');
   keepAlive();
-  
+
   try {
     const url = await ngrok.connect({
       addr: PORT,
