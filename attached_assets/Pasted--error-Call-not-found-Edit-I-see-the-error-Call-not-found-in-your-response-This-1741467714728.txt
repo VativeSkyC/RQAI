@@ -1,0 +1,102 @@
+{
+    "error": "Call not found"
+}
+
+Edit
+I see the error "Call not found" in your response. This means the endpoint is working, but the callSid you're providing doesn't match any record in your temp_calls table.
+
+Let's fix this issue:
+
+Issue: Call Not Found
+When your endpoint receives the callSid from Eleven Labs, it's looking for it in your temp_calls table, but it's not finding a match. This indicates one of these problems:
+
+The call entry wasn't properly saved when the initial call came in through your /voice endpoint
+The callSid format from Eleven Labs doesn't match what Twilio initially provided
+The temp_calls record might have been deleted by your cleanup routine
+Solutions:
+1. Modify your Postman test to use a valid callSid
+First, check your temp_calls table to see what callSids are available:
+
+sql
+
+Copy
+SELECT call_sid FROM temp_calls ORDER BY created_at DESC LIMIT 5;
+Then use one of these valid callSids in your Postman test.
+
+2. If no callSids exist, make a test call then quickly test the endpoint
+If your table is empty:
+
+Make a test call to your Twilio number
+Immediately check your database to see if the call was recorded:
+sql
+
+Copy
+SELECT * FROM temp_calls ORDER BY created_at DESC LIMIT 1;
+Use that callSid in your Postman test
+3. Add fallback logic for missing callSids
+Modify your /receive-data endpoint to handle the case when a callSid isn't found:
+
+javascript
+
+Copy
+// Match call to contact
+const callResult = await client.query('SELECT phone_number FROM temp_calls WHERE call_sid = $1', [callSid]);
+
+if (callResult.rows.length === 0) {
+  console.error('Call not found for callSid:', callSid);
+  
+  // OPTION 1: Search by callSid in your Twilio account
+  // This requires extra API calls to Twilio
+  
+  // OPTION 2: Use a default test contact for development
+  // Only use during development/testing:
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Development mode: Using test contact');
+    // Continue processing with a test contact
+    // ...
+    return res.status(200).json({ message: 'Data stored successfully (test mode)' });
+  }
+  
+  await client.query('ROLLBACK');
+  return res.status(404).json({ error: 'Call not found' });
+}
+4. Check your cleanup routine timing
+Your code has this cleanup routine:
+
+javascript
+
+Copy
+setInterval(async () => {
+  try {
+    const result = await pool.query('DELETE FROM temp_calls WHERE created_at < NOW() - INTERVAL \'1 hour\'');
+    console.log(`Cleaned up temp_calls table: ${result.rowCount} old records removed`);
+  } catch (error) {
+    console.error('Error cleaning up temp_calls:', error.message);
+  }
+}, 30 * 60 * 1000); // Every 30 minutes
+Make sure the call record isn't being deleted before Eleven Labs has a chance to send the callback. You might want to increase the cleanup interval to 2 hours or more.
+
+5. For debugging, add call logging
+Add a new table to log all calls that come in through your /voice endpoint:
+
+javascript
+
+Copy
+// Add to your database initialization
+await client.query(`
+  CREATE TABLE IF NOT EXISTS call_log (
+    id SERIAL PRIMARY KEY,
+    call_sid TEXT UNIQUE NOT NULL,
+    phone_number TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+// In your /voice endpoint, add this after storing in temp_calls
+await client.query(
+  'INSERT INTO call_log (call_sid, phone_number, created_at) VALUES ($1, $2, NOW()) ON CONFLICT (call_sid) DO NOTHING',
+  [CallSid, From]
+);
+This will give you a permanent record of all calls, which can help with debugging the Eleven Labs callback.
+
+These changes should help ensure that when Eleven Labs sends the callback, your system can properly match it to the original call and contact.
