@@ -111,6 +111,18 @@ const createTables = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    
+    // Create permanent call_log table for debugging and recovery
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS call_log (
+        id SERIAL PRIMARY KEY,
+        call_sid VARCHAR(50) UNIQUE NOT NULL,
+        phone_number VARCHAR(15) NOT NULL,
+        status VARCHAR(50) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        processed_at TIMESTAMP
+      )
+    `);
     const tableCheckResult = await client.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -360,6 +372,7 @@ app.post('/receive-data', async (req, res) => {
     } = req.body;
 
     console.log('Processing Eleven Labs data for callSid:', callSid);
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
 
     try {
       const client = await pool.connect();
@@ -367,13 +380,21 @@ app.post('/receive-data', async (req, res) => {
       try {
         await client.query('BEGIN');
 
-        // Match call to contact
-        const callResult = await client.query('SELECT phone_number FROM temp_calls WHERE call_sid = $1', [callSid]);
+        // First try to match call from temp_calls
+        let callResult = await client.query('SELECT phone_number FROM temp_calls WHERE call_sid = $1', [callSid]);
 
+        // If not found in temp_calls, try the call_log table as fallback
         if (callResult.rows.length === 0) {
-          console.error('Call not found for callSid:', callSid);
-          await client.query('ROLLBACK');
-          return res.status(404).json({ error: 'Call not found' });
+          console.log('Call not found in temp_calls, checking call_log fallback...');
+          callResult = await client.query('SELECT phone_number FROM call_log WHERE call_sid = $1', [callSid]);
+          
+          if (callResult.rows.length === 0) {
+            console.error('Call not found in both temp_calls and call_log for callSid:', callSid);
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Call not found' });
+          }
+          
+          console.log('Call found in permanent call_log table');
         }
 
         const phoneNumber = callResult.rows[0].phone_number;
@@ -410,11 +431,51 @@ app.post('/receive-data', async (req, res) => {
           ]
         );
 
-        // Clean up temp_calls
+        // Update call_log to mark as processed
+        await client.query(
+          'UPDATE call_log SET status = $1, processed_at = NOW() WHERE call_sid = $2',
+          ['processed', callSid]
+        );
+
+        // Clean up temp_calls (if it exists there)
         await client.query('DELETE FROM temp_calls WHERE call_sid = $1', [callSid]);
 
         await client.query('COMMIT');
         console.log(`Successfully stored Eleven Labs data for contact ID ${contactId}, user ID ${userId}`);
+
+// GET endpoint for testing receive-data (debugging purposes only)
+app.get('/receive-data', async (req, res) => {
+  console.log('DEBUG: Received GET request to /receive-data');
+  
+  try {
+    // Check recent calls for debugging
+    const client = await pool.connect();
+    const callLogResult = await client.query(
+      'SELECT call_sid, phone_number, status, created_at, processed_at FROM call_log ORDER BY created_at DESC LIMIT 5'
+    );
+    client.release();
+    
+    res.status(200).json({
+      message: 'This endpoint requires a POST request with callSid from Eleven Labs',
+      note: 'This GET handler is for debugging only',
+      recent_calls: callLogResult.rows,
+      expected_post_format: {
+        callSid: "CALL_SID_FROM_TWILIO",
+        communication_style: "Sample communication style",
+        goals: "Sample goals",
+        values: "Sample values",
+        professional_goals: "Sample professional goals",
+        partnership_expectations: "Sample partnership expectations",
+        raw_transcript: "Sample raw transcript"
+      }
+    });
+  } catch (error) {
+    console.error('Error in debug endpoint:', error.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+
 
         return res.status(200).json({ message: 'Data stored successfully' });
       } catch (error) {
@@ -485,13 +546,31 @@ app.post('/voice', async (req, res) => {
   console.log('Incoming call received. CallSid:', CallSid, 'From:', From);
 
   try {
-    // Store call details temporarily
+    // Store call details in both temp and permanent tables
     const client = await pool.connect();
-    await client.query(
-      'INSERT INTO temp_calls (call_sid, phone_number, created_at) VALUES ($1, $2, NOW())',
-      [CallSid, From]
-    );
-    client.release();
+    try {
+      await client.query('BEGIN');
+      
+      // Store in temp_calls for immediate use
+      await client.query(
+        'INSERT INTO temp_calls (call_sid, phone_number, created_at) VALUES ($1, $2, NOW())',
+        [CallSid, From]
+      );
+      
+      // Also store in permanent call_log for debugging and recovery
+      await client.query(
+        'INSERT INTO call_log (call_sid, phone_number, created_at) VALUES ($1, $2, NOW()) ON CONFLICT (call_sid) DO NOTHING',
+        [CallSid, From]
+      );
+      
+      await client.query('COMMIT');
+      console.log(`Call from ${From} with SID ${CallSid} successfully logged`);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
 
     // Redirect to Eleven Labs
     const twiml = `
@@ -530,15 +609,15 @@ const keepAlive = () => {
   }, 20000); // Every 20 seconds
 };
 
-// Scheduled cleanup for temp_calls table
+// Scheduled cleanup for temp_calls table with longer retention
 setInterval(async () => {
   try {
-    const result = await pool.query('DELETE FROM temp_calls WHERE created_at < NOW() - INTERVAL \'1 hour\'');
+    const result = await pool.query('DELETE FROM temp_calls WHERE created_at < NOW() - INTERVAL \'4 hours\'');
     console.log(`Cleaned up temp_calls table: ${result.rowCount} old records removed`);
   } catch (error) {
     console.error('Error cleaning up temp_calls:', error.message);
   }
-}, 30 * 60 * 1000); // Every 30 minutes
+}, 60 * 60 * 1000); // Every 60 minutes
 
 // Ping endpoint for uptime monitoring
 app.get('/ping', (req, res) => {
