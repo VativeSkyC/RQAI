@@ -25,35 +25,182 @@
             margin-bottom: 20px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 15px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: 1px solid #ddd;
+            background: #f1f1f1;
+        }
+        .tab.active {
+            background: #fff;
+            border-bottom: none;
+        }
+        #tokenDisplay {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f5f5f5;
+            word-break: break-all;
+        }
     </style>
 </head>
 <body>
     <h1>AI Relationship Agent</h1>
     
-    <div class="card">
-        <h2>Welcome to the Static Version</h2>
-        <p>This page is being served as a static file from the public directory.</p>
-        <p>You can now build more sophisticated front-end interfaces using HTML, CSS, and JavaScript.</p>
+    <div class="tabs">
+        <div class="tab active" onclick="showTab('login')">Login</div>
+        <div class="tab" onclick="showTab('register')">Register</div>
+    </div>
+    
+    <div class="card" id="loginTab">
+        <h2>Login</h2>
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="loginEmail">Email</label>
+                <input type="email" id="loginEmail" required>
+            </div>
+            <div class="form-group">
+                <label for="loginPassword">Password</label>
+                <input type="password" id="loginPassword" required>
+            </div>
+            <button type="submit">Login</button>
+        </form>
+        <div id="loginMessage"></div>
+    </div>
+    
+    <div class="card" id="registerTab" style="display: none;">
+        <h2>Register</h2>
+        <form id="registerForm">
+            <div class="form-group">
+                <label for="registerEmail">Email</label>
+                <input type="email" id="registerEmail" required>
+            </div>
+            <div class="form-group">
+                <label for="registerPassword">Password</label>
+                <input type="password" id="registerPassword" required>
+            </div>
+            <button type="submit">Register</button>
+        </form>
+        <div id="registerMessage"></div>
     </div>
     
     <div class="card">
-        <h2>API Endpoints</h2>
+        <h2>About AI Relationship Agent</h2>
+        <p>This application helps you manage and maintain your professional relationships. 
+           Add your contacts, and our AI-powered system will help you stay in touch 
+           and build stronger connections.</p>
+        <p>Features include:</p>
         <ul>
-            <li><strong>/register</strong> - Register a new user</li>
-            <li><strong>/login</strong> - Login and get a JWT token</li>
-            <li><strong>/add-contact</strong> - Add a new contact (requires authentication)</li>
-            <li><strong>/receive-data</strong> - Endpoint for receiving call data</li>
-            <li><strong>/voice</strong> - Twilio voice webhook endpoint</li>
-            <li><strong>/ping</strong> - Health check endpoint</li>
+            <li>Contact management with phone and LinkedIn integration</li>
+            <li>Automated communication via Twilio</li>
+            <li>ElevenLabs AI-powered relationship insights</li>
         </ul>
     </div>
     
-    <div class="card">
-        <a href="/old-interface">Access the original interface</a>
-    </div>
-    
     <script>
-        console.log('Static file serving is working!');
+        // Tab functionality
+        function showTab(tabName) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelector(`.tab[onclick="showTab('${tabName}')"]`).classList.add('active');
+            
+            document.getElementById('loginTab').style.display = tabName === 'login' ? 'block' : 'none';
+            document.getElementById('registerTab').style.display = tabName === 'register' ? 'block' : 'none';
+        }
+        
+        // Check if user is already logged in
+        document.addEventListener('DOMContentLoaded', () => {
+            const token = localStorage.getItem('jwt_token');
+            if (token) {
+                // Redirect to dashboard if already logged in
+                window.location.href = '/dashboard.html';
+            }
+        });
+        
+        // Register form submission
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('registerEmail').value;
+            const password = document.getElementById('registerPassword').value;
+            const messageEl = document.getElementById('registerMessage');
+            
+            try {
+                const response = await fetch('/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    messageEl.innerHTML = `<p style="color: green;">${data.message}</p>`;
+                    showTab('login');
+                } else {
+                    messageEl.innerHTML = `<p style="color: red;">${data.error}</p>`;
+                }
+            } catch (error) {
+                messageEl.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        });
+        
+        // Login form submission
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            const messageEl = document.getElementById('loginMessage');
+            
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    messageEl.innerHTML = `<p style="color: green;">${data.message}</p>`;
+                    
+                    // Store token and user info in localStorage
+                    localStorage.setItem('jwt_token', data.token);
+                    localStorage.setItem('user_id', data.userId);
+                    localStorage.setItem('user_email', email);
+                    
+                    // Redirect to dashboard
+                    window.location.href = '/dashboard.html';
+                } else {
+                    messageEl.innerHTML = `<p style="color: red;">${data.error}</p>`;
+                }
+            } catch (error) {
+                messageEl.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        });
     </script>
 </body>
 </html>

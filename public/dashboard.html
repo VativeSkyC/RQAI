@@ -1,0 +1,205 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contact Dashboard | AI Relationship Agent</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #333;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+        .user-info {
+            text-align: right;
+        }
+        .btn {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .btn-danger {
+            background-color: #f44336;
+        }
+        .card {
+            background: #f9f9f9;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .contacts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .contact-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            background-color: white;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Contact Dashboard</h1>
+        <div class="user-info">
+            <span id="userEmail">Not logged in</span>
+            <button id="logoutBtn" class="btn btn-danger">Logout</button>
+        </div>
+    </header>
+
+    <div class="card">
+        <h2>Add New Contact</h2>
+        <form id="addContactForm">
+            <div class="form-group">
+                <label for="firstName">First Name *</label>
+                <input type="text" id="firstName" name="firstName" required>
+            </div>
+            <div class="form-group">
+                <label for="lastName">Last Name *</label>
+                <input type="text" id="lastName" name="lastName" required>
+            </div>
+            <div class="form-group">
+                <label for="phoneNumber">Phone Number *</label>
+                <input type="tel" id="phoneNumber" name="phoneNumber" placeholder="+12125551234" required>
+            </div>
+            <div class="form-group">
+                <label for="companyName">Company Name</label>
+                <input type="text" id="companyName" name="companyName">
+            </div>
+            <div class="form-group">
+                <label for="linkedinUrl">LinkedIn URL</label>
+                <input type="url" id="linkedinUrl" name="linkedinUrl" placeholder="https://linkedin.com/in/username">
+            </div>
+            <button type="submit" class="btn">Add Contact</button>
+        </form>
+        <div id="addContactMessage"></div>
+    </div>
+
+    <div class="card">
+        <h2>Your Contacts</h2>
+        <div id="contactsContainer" class="contacts-grid">
+            <!-- Contacts will be displayed here -->
+            <div class="contact-card">
+                <h3>Loading contacts...</h3>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check if user is logged in
+            const token = localStorage.getItem('jwt_token');
+            if (!token) {
+                alert('Please log in first');
+                window.location.href = '/';
+                return;
+            }
+
+            // Display user email
+            const userEmail = localStorage.getItem('user_email');
+            document.getElementById('userEmail').textContent = userEmail;
+
+            // Logout functionality
+            document.getElementById('logoutBtn').addEventListener('click', function() {
+                localStorage.removeItem('jwt_token');
+                localStorage.removeItem('user_id');
+                localStorage.removeItem('user_email');
+                window.location.href = '/';
+            });
+
+            // Add contact form submission
+            document.getElementById('addContactForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const messageEl = document.getElementById('addContactMessage');
+                
+                try {
+                    const response = await fetch('/add-contact', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            first_name: document.getElementById('firstName').value,
+                            last_name: document.getElementById('lastName').value,
+                            phone_number: document.getElementById('phoneNumber').value,
+                            company_name: document.getElementById('companyName').value || null,
+                            linkedin_url: document.getElementById('linkedinUrl').value || null
+                        })
+                    });
+
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        messageEl.innerHTML = `<p style="color: green;">Contact added successfully!</p>`;
+                        document.getElementById('addContactForm').reset();
+                        loadContacts(); // Refresh the contacts list
+                    } else {
+                        messageEl.innerHTML = `<p style="color: red;">Error: ${data.error || 'Failed to add contact'}</p>`;
+                    }
+                } catch (error) {
+                    messageEl.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+                }
+            });
+
+            // TODO: Add function to load and display contacts
+            // This would require a backend endpoint to get contacts for the logged-in user
+            function loadContacts() {
+                // This is a placeholder - you would need to implement a GET endpoint for contacts
+                document.getElementById('contactsContainer').innerHTML = `
+                    <div class="contact-card">
+                        <h3>John Doe</h3>
+                        <p>Phone: +12125551234</p>
+                        <p>Company: Example Inc</p>
+                        <p>Added: 2023-05-01</p>
+                    </div>
+                    <div class="contact-card">
+                        <h3>Jane Smith</h3>
+                        <p>Phone: +13105557890</p>
+                        <p>Company: Tech Solutions</p>
+                        <p>Added: 2023-05-02</p>
+                    </div>
+                `;
+            }
+
+            // Initial contacts load
+            loadContacts();
+        });
+    </script>
+</body>
+</html>
