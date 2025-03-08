@@ -71,6 +71,17 @@ const createTables = async () => {
       )
     `);
 
+    // Create SMS log table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sms_log (
+        id SERIAL PRIMARY KEY,
+        contact_id INTEGER REFERENCES contacts(id),
+        user_id INTEGER REFERENCES users(id),
+        message_type VARCHAR(50) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Check if contacts table needs column updates
     const columnCheck = await client.query(`
       SELECT column_name 
@@ -672,6 +683,69 @@ app.put('/update-contact/:id', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Phone number already exists in contacts' });
     }
     res.status(500).json({ error: 'Failed to update contact', details: error.message });
+  }
+});
+
+// Send intake SMS endpoint
+app.post('/send-intake-sms/:contactId', verifyToken, async (req, res) => {
+  const contactId = req.params.contactId;
+  const userId = req.userId;
+
+  try {
+    const client = await pool.connect();
+    try {
+      const contactResult = await client.query(
+        'SELECT * FROM contacts WHERE id = $1 AND user_id = $2',
+        [contactId, userId]
+      );
+
+      if (contactResult.rows.length === 0) {
+        client.release();
+        return res.status(404).json({ error: 'Contact not found' });
+      }
+
+      const contact = contactResult.rows[0];
+      const userResult = await client.query('SELECT email FROM users WHERE id = $1', [userId]);
+      const userName = userResult.rows[0].email.split('@')[0]; // Extract name from email
+
+      // Check if Twilio credentials are configured
+      if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
+        client.release();
+        return res.status(400).json({ 
+          error: 'Twilio credentials not configured',
+          details: 'Please set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER environment variables'
+        });
+      }
+
+      // Send SMS via Twilio
+      const twilioClient = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+      const message = await twilioClient.messages.create({
+        body: `Hi ${contact.first_name}, ${userName} would like to connect with you. Please call ${process.env.TWILIO_PHONE_NUMBER} to complete your intake with our AI relationship assistant.`,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to: contact.phone_number
+      });
+
+      // Log the SMS in the database
+      await client.query(
+        'INSERT INTO sms_log (contact_id, user_id, message_type, created_at) VALUES ($1, $2, $3, NOW())',
+        [contactId, userId, 'intake_invitation']
+      );
+
+      // Also log in sms_messages for consistency
+      await client.query(
+        'INSERT INTO sms_messages (contact_id, user_id, message, twilio_sid, sent_at) VALUES ($1, $2, $3, $4, NOW())',
+        [contactId, userId, `Intake invitation: Hi ${contact.first_name}, ${userName} would like to connect with you.`, message.sid]
+      );
+
+      client.release();
+      res.status(200).json({ message: 'Intake SMS sent successfully' });
+    } catch (error) {
+      client.release();
+      throw error;
+    }
+  } catch (error) {
+    console.error('Error sending intake SMS:', error.message);
+    res.status(500).json({ error: 'Failed to send SMS', details: error.message });
   }
 });
 

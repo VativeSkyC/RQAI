@@ -154,6 +154,7 @@
     <div id="smsFormContainer" class="contact-form">
         <h2>Send SMS</h2>
         <form id="sendSmsForm">
+            <input type="hidden" id="smsContactId">
             <p>To: <span id="smsRecipientName"></span></p>
             <textarea id="smsMessage" placeholder="Enter your message" rows="4" required></textarea>
             <button type="submit">Send SMS</button>
@@ -183,6 +184,40 @@
 
             // Load contacts
             fetchContacts();
+        }
+        
+        // Function to send intake SMS
+        async function sendIntakeSMS(contactId) {
+            const formMessage = document.createElement('div');
+            formMessage.textContent = 'Sending intake SMS...';
+            event.target.parentNode.appendChild(formMessage);
+            event.target.disabled = true;
+            
+            try {
+                const response = await fetch(`/send-intake-sms/${contactId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    formMessage.textContent = 'Intake SMS sent successfully!';
+                    // Refresh contacts to update the UI
+                    setTimeout(() => {
+                        fetchContacts();
+                    }, 1500);
+                } else {
+                    formMessage.textContent = `Error: ${data.error || 'Unknown error'}`;
+                    if (data.details) formMessage.textContent += ` (${data.details})`;
+                    event.target.disabled = false;
+                }
+            } catch (error) {
+                formMessage.textContent = `Error: ${error.message}`;
+                event.target.disabled = false;
+            }
         }
 
         // Toggle contact form
@@ -318,6 +353,7 @@
                                     <div class="contact-actions">
                                         <button onclick="showSmsForm(${contact.id}, '${contact.first_name} ${contact.last_name}')">SMS</button>
                                         <button onclick="editContact(${contact.id}, '${contact.first_name}', '${contact.last_name}', '${contact.phone_number}', '${contact.company_name || ''}', '${contact.linkedin_url || ''}')">Edit</button>
+                                        ${!contact.has_intake ? `<button onclick="sendIntakeSMS(${contact.id})">Send Intake SMS</button>` : ''}
                                     </div>
                                 </div>
                                 <p><strong>Phone:</strong> ${contact.phone_number}</p>
