@@ -863,10 +863,15 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
       subdomain: 'ai-relationship-agent',
       onLogEvent: (message) => console.log(message),
     });
-    console.log('Ngrok tunnel established!');
-    console.log(`Voice endpoint accessible at: ${url}/voice`);
+    console.log('=== NGROK CONNECTION DETAILS ===');
+    console.log(`Ngrok tunnel established: ${url}`);
+    console.log(`Main site: ${url}`);
+    console.log(`Dashboard: ${url}/dashboard.html`);
+    console.log(`Voice endpoint: ${url}/voice`);
+    console.log(`Data endpoint: ${url}/receive-data`);
     console.log('Set Twilio webhook to:', `${url}/voice`);
     console.log('Set ElevenLabs webhook to:', `${url}/receive-data`);
+    console.log('===============================');
   } catch (error) {
     console.error('Error establishing Ngrok tunnel:', error.message);
     console.log('Ensure NGROK_AUTH_TOKEN is set in your environment variables');
