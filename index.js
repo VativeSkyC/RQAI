@@ -349,43 +349,164 @@ const verifyToken = (req, res, next) => {
   }
 };
 
-// Data reception endpoint
-app.post('/receive-data', verifyToken, async (req, res) => {
-  console.log('Received request to /receive-data');
-  const phoneNumber = req.body.From;
-  const userResponse = req.body.userResponse;
-  const userId = req.userId;
-  if (!phoneNumber || !userResponse) {
-    console.log('Validation failed - Missing phoneNumber or userResponse', { phoneNumber, userResponse });
-    return res.status(400).json({ error: 'Phone number and response are required' });
-  }
-  try {
-    const client = await pool.connect();
-    await client.query('BEGIN');
-    let contactResult = await client.query('SELECT id FROM contacts WHERE phone_number = $1', [phoneNumber]);
-    let contactId;
-    if (contactResult.rows.length === 0) {
-      const newContactResult = await client.query(
-        'INSERT INTO contacts (phone_number, user_id) VALUES ($1, $2) RETURNING id',
-        [phoneNumber, userId]
-      );
-      contactId = newContactResult.rows[0].id;
-    } else {
-      contactId = contactResult.rows[0].id;
+// Data reception endpoint from Eleven Labs
+app.post('/receive-data', async (req, res) => {
+  console.log('Received request to /receive-data from Eleven Labs');
+  
+  // Handle both authentication methods: direct user requests with JWT and Eleven Labs callbacks
+  let isElevenLabsCallback = false;
+  let userId = null;
+  
+  // Check if this is a verifiable Eleven Labs callback with callSid
+  if (req.body.callSid) {
+    isElevenLabsCallback = true;
+    console.log('Eleven Labs callback detected with callSid:', req.body.callSid);
+  } else {
+    // Standard JWT verification for direct API calls
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) {
+        return res.status(403).json({ error: 'No token provided' });
+      }
+      const token = authHeader.split(' ')[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      userId = decoded.userId;
+      console.log('Token verified, proceeding with userId:', userId);
+    } catch (error) {
+      console.error('Token verification failed:', error.message);
+      return res.status(401).json({ error: 'Unauthorized' });
     }
-    await client.query(
-      'INSERT INTO intake_responses (contact_id, user_id, response_text) VALUES ($1, $2, $3)',
-      [contactId, userId, userResponse]
-    );
-    await client.query('COMMIT');
-    console.log(`Data received - Phone: ${phoneNumber}, User ID: ${userId}, Response: ${userResponse}`);
-    client.release();
-    res.json({ message: 'Data received' });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    client.release();
-    console.error('Error processing data:', error.message);
-    res.status(500).json({ error: 'Server error while processing data' });
+  }
+  
+  // Handle Eleven Labs callback data
+  if (isElevenLabsCallback) {
+    const { 
+      callSid, 
+      communication_style, 
+      goals, 
+      values, 
+      professional_goals, 
+      partnership_expectations, 
+      raw_transcript 
+    } = req.body;
+    
+    console.log('Processing Eleven Labs data for callSid:', callSid);
+
+    try {
+      const client = await pool.connect();
+      
+      try {
+        await client.query('BEGIN');
+        
+        // Match call to contact
+        const callResult = await client.query('SELECT phone_number FROM temp_calls WHERE call_sid = $1', [callSid]);
+        
+        if (callResult.rows.length === 0) {
+          console.error('Call not found for callSid:', callSid);
+          await client.query('ROLLBACK');
+          return res.status(404).json({ error: 'Call not found' });
+        }
+        
+        const phoneNumber = callResult.rows[0].phone_number;
+        console.log(`Found phone number ${phoneNumber} for callSid: ${callSid}`);
+        
+        // Find the corresponding contact
+        const contactResult = await client.query('SELECT id, user_id FROM contacts WHERE phone_number = $1', [phoneNumber]);
+        
+        if (contactResult.rows.length === 0) {
+          console.error('Contact not found for phone number:', phoneNumber);
+          await client.query('ROLLBACK');
+          return res.status(404).json({ error: 'Contact not found' });
+        }
+        
+        const contactId = contactResult.rows[0].id;
+        userId = contactResult.rows[0].user_id;
+        console.log(`Found contact (ID: ${contactId}) for user (ID: ${userId})`);
+        
+        // Store call data
+        await client.query(
+          `INSERT INTO intake_responses (
+            contact_id, user_id, communication_style, goals, values, 
+            professional_goals, partnership_expectations, raw_transcript, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+          [
+            contactId, 
+            userId, 
+            communication_style || null, 
+            goals || null, 
+            values || null, 
+            professional_goals || null, 
+            partnership_expectations || null, 
+            raw_transcript || null
+          ]
+        );
+        
+        // Clean up temp_calls
+        await client.query('DELETE FROM temp_calls WHERE call_sid = $1', [callSid]);
+        
+        await client.query('COMMIT');
+        console.log(`Successfully stored Eleven Labs data for contact ID ${contactId}, user ID ${userId}`);
+        
+        return res.status(200).json({ message: 'Data stored successfully' });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error; // Pass to outer catch
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      console.error('Error processing Eleven Labs data:', error.message);
+      return res.status(500).json({ error: 'Failed to store data', details: error.message });
+    }
+  } 
+  // Handle standard API request with JWT auth
+  else {
+    const phoneNumber = req.body.From;
+    const userResponse = req.body.userResponse;
+    
+    if (!phoneNumber || !userResponse) {
+      console.log('Validation failed - Missing phoneNumber or userResponse', { phoneNumber, userResponse });
+      return res.status(400).json({ error: 'Phone number and response are required' });
+    }
+    
+    try {
+      const client = await pool.connect();
+      
+      try {
+        await client.query('BEGIN');
+        
+        let contactResult = await client.query('SELECT id FROM contacts WHERE phone_number = $1', [phoneNumber]);
+        let contactId;
+        
+        if (contactResult.rows.length === 0) {
+          const newContactResult = await client.query(
+            'INSERT INTO contacts (phone_number, user_id) VALUES ($1, $2) RETURNING id',
+            [phoneNumber, userId]
+          );
+          contactId = newContactResult.rows[0].id;
+        } else {
+          contactId = contactResult.rows[0].id;
+        }
+        
+        await client.query(
+          'INSERT INTO intake_responses (contact_id, user_id, response_text) VALUES ($1, $2, $3)',
+          [contactId, userId, userResponse]
+        );
+        
+        await client.query('COMMIT');
+        console.log(`Data received - Phone: ${phoneNumber}, User ID: ${userId}, Response: ${userResponse}`);
+        
+        return res.json({ message: 'Data received' });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error; // Pass to outer catch
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      console.error('Error processing data:', error.message);
+      return res.status(500).json({ error: 'Server error while processing data', details: error.message });
+    }
   }
 });
 
