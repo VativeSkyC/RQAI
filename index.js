@@ -221,14 +221,26 @@ const jwt = require('jsonwebtoken');
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+  
+  // Check if JWT_SECRET is set
+  if (!process.env.JWT_SECRET) {
+    console.error('JWT_SECRET environment variable is not set!');
+    return res.status(500).json({ error: 'Server configuration error - JWT_SECRET not set' });
+  }
+  
   try {
     const client = await pool.connect();
     const result = await client.query('SELECT * FROM users WHERE email = $1 AND password = $2', [email, password]);
     client.release();
     if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid email or password' });
     const userId = result.rows[0].id;
-    const token = jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '24h' });
-    res.json({ message: 'Login successful', userId, token });
+    try {
+      const token = jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '24h' });
+      res.json({ message: 'Login successful', userId, token });
+    } catch (jwtError) {
+      console.error('JWT signing error:', jwtError.message);
+      res.status(500).json({ error: 'Error creating authentication token' });
+    }
   } catch (error) {
     console.error('Login error:', error.message);
     res.status(500).json({ error: 'Server error during login' });
@@ -323,6 +335,15 @@ const keepAlive = () => {
 // Start server and ngrok tunnel
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`You can access the web interface at: https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`);
+  
+  // Check if JWT_SECRET is set
+  if (!process.env.JWT_SECRET) {
+    console.error('WARNING: JWT_SECRET environment variable is not set!');
+    console.error('Login functionality will not work without JWT_SECRET.');
+    console.error('Please set it in the Secrets tool (Environment Variables).');
+  }
+  
   keepAlive();
   try {
     const url = await ngrok.connect({
