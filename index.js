@@ -58,6 +58,18 @@ const createTables = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    
+    // Create SMS messages table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sms_messages (
+        id SERIAL PRIMARY KEY,
+        contact_id INTEGER REFERENCES contacts(id),
+        user_id INTEGER REFERENCES users(id),
+        message TEXT NOT NULL,
+        twilio_sid VARCHAR(50),
+        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
     // Check if contacts table needs column updates
     const columnCheck = await client.query(`
@@ -523,20 +535,98 @@ app.get('/ping', (req, res) => {
   res.status(200).send('OK');
 });
 
-// Get contacts endpoint
+// Get contacts endpoint with intake status
 app.get('/get-contacts', verifyToken, async (req, res) => {
   try {
     const userId = req.userId;
     const client = await pool.connect();
-    const result = await client.query(
-      'SELECT id, first_name, last_name, phone_number, company_name, linkedin_url, created_at FROM contacts WHERE user_id = $1 ORDER BY created_at DESC',
-      [userId]
-    );
+    
+    // Modified query to include intake status
+    const result = await client.query(`
+      SELECT c.id, c.first_name, c.last_name, c.phone_number, c.company_name, c.linkedin_url, c.created_at,
+      CASE WHEN ir.id IS NOT NULL THEN true ELSE false END AS has_intake
+      FROM contacts c
+      LEFT JOIN (
+        SELECT DISTINCT contact_id, id
+        FROM intake_responses
+        WHERE user_id = $1
+      ) ir ON c.id = ir.contact_id
+      WHERE c.user_id = $1
+      ORDER BY c.created_at DESC
+    `, [userId]);
+    
     client.release();
     res.json({ contacts: result.rows });
   } catch (error) {
     console.error('Error fetching contacts:', error.message);
     res.status(500).json({ error: 'Failed to retrieve contacts' });
+  }
+});
+
+// Send SMS endpoint
+app.post('/send-sms', verifyToken, async (req, res) => {
+  try {
+    const { contactId, message } = req.body;
+    const userId = req.userId;
+    
+    if (!contactId || !message) {
+      return res.status(400).json({ error: 'Contact ID and message are required' });
+    }
+    
+    // Check if Twilio credentials are configured
+    if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
+      return res.status(400).json({ 
+        error: 'Twilio credentials not configured',
+        details: 'Please set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER environment variables'
+      });
+    }
+    
+    // Get contact phone number
+    const client = await pool.connect();
+    const contactResult = await client.query(
+      'SELECT phone_number, first_name, last_name FROM contacts WHERE id = $1 AND user_id = $2',
+      [contactId, userId]
+    );
+    
+    if (contactResult.rows.length === 0) {
+      client.release();
+      return res.status(404).json({ error: 'Contact not found or access denied' });
+    }
+    
+    const { phone_number, first_name } = contactResult.rows[0];
+    
+    // Send SMS using Twilio
+    const twilioClient = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    const twilioResponse = await twilioClient.messages.create({
+      body: message,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: phone_number
+    });
+    
+    // Log the message
+    await client.query(
+      'INSERT INTO sms_messages (contact_id, user_id, message, twilio_sid, sent_at) VALUES ($1, $2, $3, $4, NOW())',
+      [contactId, userId, message, twilioResponse.sid]
+    ).catch(err => {
+      console.log('Failed to log SMS message, table might not exist:', err.message);
+      // Continue execution even if logging fails
+    });
+    
+    client.release();
+    
+    console.log(`SMS sent to ${first_name} at ${phone_number}: "${message.substring(0, 30)}..."`);
+    
+    res.status(200).json({ 
+      message: 'SMS sent successfully',
+      sid: twilioResponse.sid,
+      status: twilioResponse.status
+    });
+  } catch (error) {
+    console.error('Error sending SMS:', error.message);
+    res.status(500).json({ 
+      error: 'Failed to send SMS', 
+      details: error.message 
+    });
   }
 });
 
