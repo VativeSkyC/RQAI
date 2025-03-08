@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -162,25 +161,25 @@
     <div class="container">
         <h1>Relationship Management Dashboard</h1>
         <button class="logout-button" id="logoutButton">Logout</button>
-        
+
         <div class="user-info">
             <p><strong>User ID:</strong> <span id="userId"></span></p>
             <p><strong>Authentication:</strong> <span id="authStatus"></span></p>
         </div>
-        
+
         <div id="errorMessage"></div>
         <div id="twilioErrorMessage">
             <strong>Twilio credentials not configured!</strong> Contact your administrator to set up the SMS capabilities.
         </div>
-        
+
         <button class="add-contact" id="addContactButton">+ Add New Contact</button>
-        
+
         <h2>Your Contacts</h2>
         <div class="contact-list" id="contactList">
             <!-- Contacts will be populated here -->
         </div>
     </div>
-    
+
     <!-- Add Contact Modal -->
     <div id="addContactModal" class="modal">
         <div class="modal-content">
@@ -211,7 +210,7 @@
             </form>
         </div>
     </div>
-    
+
     <!-- Edit Contact Modal -->
     <div id="editContactModal" class="modal">
         <div class="modal-content">
@@ -243,7 +242,7 @@
             </form>
         </div>
     </div>
-    
+
     <!-- Send SMS Modal -->
     <div id="sendSmsModal" class="modal">
         <div class="modal-content">
@@ -274,12 +273,12 @@
         const contactListElement = document.getElementById('contactList');
         const errorMessageElement = document.getElementById('errorMessage');
         const twilioErrorMessageElement = document.getElementById('twilioErrorMessage');
-        
+
         // Modals
         const addContactModal = document.getElementById('addContactModal');
         const editContactModal = document.getElementById('editContactModal');
         const sendSmsModal = document.getElementById('sendSmsModal');
-        
+
         // Display user info
         const userId = localStorage.getItem('userId');
         userIdElement.textContent = userId || 'Unknown';
@@ -300,11 +299,11 @@
                         'Authorization': `Bearer ${token}`
                     }
                 });
-                
+
                 if (!response.ok) {
                     throw new Error(`HTTP error! Status: ${response.status}`);
                 }
-                
+
                 const data = await response.json();
                 displayContacts(data.contacts);
             } catch (error) {
@@ -316,22 +315,22 @@
         // Display contacts in the UI
         function displayContacts(contacts) {
             contactListElement.innerHTML = '';
-            
+
             if (contacts.length === 0) {
                 contactListElement.innerHTML = '<p>No contacts found. Add your first contact to get started!</p>';
                 return;
             }
-            
+
             contacts.forEach(contact => {
                 const contactCard = document.createElement('div');
                 contactCard.className = 'contact-card';
-                
+
                 const contactInfo = document.createElement('div');
                 contactInfo.className = 'contact-info';
-                
+
                 const name = document.createElement('h3');
                 name.textContent = `${contact.first_name} ${contact.last_name}`;
-                
+
                 if (contact.has_intake) {
                     const intakeTag = document.createElement('span');
                     intakeTag.className = 'intake-tag';
@@ -343,21 +342,21 @@
                     noIntakeTag.textContent = 'No Intake';
                     name.appendChild(noIntakeTag);
                 }
-                
+
                 contactInfo.appendChild(name);
-                
+
                 if (contact.phone_number) {
                     const phone = document.createElement('p');
                     phone.textContent = `Phone: ${contact.phone_number}`;
                     contactInfo.appendChild(phone);
                 }
-                
+
                 if (contact.company_name) {
                     const company = document.createElement('p');
                     company.textContent = `Company: ${contact.company_name}`;
                     contactInfo.appendChild(company);
                 }
-                
+
                 if (contact.linkedin_url) {
                     const linkedin = document.createElement('p');
                     const linkedinLink = document.createElement('a');
@@ -368,29 +367,29 @@
                     linkedin.appendChild(linkedinLink);
                     contactInfo.appendChild(linkedin);
                 }
-                
+
                 const added = document.createElement('p');
                 added.textContent = `Added: ${new Date(contact.created_at).toLocaleString()}`;
                 contactInfo.appendChild(added);
-                
+
                 contactCard.appendChild(contactInfo);
-                
+
                 // Contact actions
                 const contactActions = document.createElement('div');
                 contactActions.className = 'contact-actions';
-                
+
                 const smsButton = document.createElement('button');
                 smsButton.className = 'sms-button';
                 smsButton.textContent = 'SMS';
                 smsButton.addEventListener('click', () => openSendSmsModal(contact));
                 contactActions.appendChild(smsButton);
-                
+
                 const editButton = document.createElement('button');
                 editButton.className = 'edit-button';
                 editButton.textContent = 'Edit';
                 editButton.addEventListener('click', () => openEditContactModal(contact));
                 contactActions.appendChild(editButton);
-                
+
                 if (!contact.has_intake) {
                     const intakeButton = document.createElement('button');
                     intakeButton.className = 'intake-button';
@@ -398,7 +397,7 @@
                     intakeButton.addEventListener('click', () => sendIntakeSms(contact.id));
                     contactActions.appendChild(intakeButton);
                 }
-                
+
                 contactCard.appendChild(contactActions);
                 contactListElement.appendChild(contactCard);
             });
@@ -417,11 +416,11 @@
         document.getElementById('addContactButton').addEventListener('click', () => {
             addContactModal.style.display = 'block';
         });
-        
+
         document.getElementById('closeAddContactModal').addEventListener('click', () => {
             addContactModal.style.display = 'none';
         });
-        
+
         // Edit Contact Modal
         function openEditContactModal(contact) {
             document.getElementById('editContactId').value = contact.id;
@@ -432,11 +431,11 @@
             document.getElementById('editLinkedinUrl').value = contact.linkedin_url || '';
             editContactModal.style.display = 'block';
         }
-        
+
         document.getElementById('closeEditContactModal').addEventListener('click', () => {
             editContactModal.style.display = 'none';
         });
-        
+
         // Send SMS Modal
         function openSendSmsModal(contact) {
             document.getElementById('smsContactId').value = contact.id;
@@ -444,21 +443,21 @@
             document.getElementById('smsMessage').value = '';
             sendSmsModal.style.display = 'block';
         }
-        
+
         document.getElementById('closeSendSmsModal').addEventListener('click', () => {
             sendSmsModal.style.display = 'none';
         });
-        
+
         // Add Contact Form Submission
         document.getElementById('addContactForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const firstName = document.getElementById('firstName').value;
             const lastName = document.getElementById('lastName').value;
             const phoneNumber = document.getElementById('phoneNumber').value;
             const company = document.getElementById('company').value;
             const linkedinUrl = document.getElementById('linkedinUrl').value;
-            
+
             try {
                 const response = await fetch('/add-contact', {
                     method: 'POST',
@@ -474,17 +473,17 @@
                         linkedin_url: linkedinUrl
                     })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (!response.ok) {
                     throw new Error(data.error || 'Failed to add contact');
                 }
-                
+
                 // Reset form and close modal
                 document.getElementById('addContactForm').reset();
                 addContactModal.style.display = 'none';
-                
+
                 // Refresh contact list
                 fetchContacts();
             } catch (error) {
@@ -492,18 +491,18 @@
                 showError(error.message);
             }
         });
-        
+
         // Edit Contact Form Submission
         document.getElementById('editContactForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const contactId = document.getElementById('editContactId').value;
             const firstName = document.getElementById('editFirstName').value;
             const lastName = document.getElementById('editLastName').value;
             const phoneNumber = document.getElementById('editPhoneNumber').value;
             const company = document.getElementById('editCompany').value;
             const linkedinUrl = document.getElementById('editLinkedinUrl').value;
-            
+
             try {
                 const response = await fetch(`/update-contact/${contactId}`, {
                     method: 'PUT',
@@ -519,13 +518,13 @@
                         linkedin_url: linkedinUrl
                     })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (!response.ok) {
                     throw new Error(data.error || 'Failed to update contact');
                 }
-                
+
                 // Close modal and refresh contacts
                 editContactModal.style.display = 'none';
                 fetchContacts();
@@ -534,14 +533,14 @@
                 showError(error.message);
             }
         });
-        
+
         // Send SMS Form Submission
         document.getElementById('sendSmsForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const contactId = document.getElementById('smsContactId').value;
             const message = document.getElementById('smsMessage').value;
-            
+
             try {
                 const response = await fetch('/send-sms', {
                     method: 'POST',
@@ -554,9 +553,9 @@
                         message
                     })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (!response.ok) {
                     // Check if this is a Twilio configuration error
                     if (data.error === 'Twilio credentials not configured') {
@@ -566,11 +565,11 @@
                         throw new Error(data.error || 'Failed to send SMS');
                     }
                 }
-                
+
                 // Reset form and close modal
                 document.getElementById('sendSmsForm').reset();
                 sendSmsModal.style.display = 'none';
-                
+
                 // Show success message
                 showError('SMS sent successfully!');
             } catch (error) {
@@ -578,7 +577,7 @@
                 showError(error.message);
             }
         });
-        
+
         // Send Intake SMS
         async function sendIntakeSms(contactId) {
             try {
@@ -588,9 +587,9 @@
                         'Authorization': `Bearer ${token}`
                     }
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (!response.ok) {
                     // Check if this is a Twilio configuration error
                     if (data.error === 'Twilio credentials not configured') {
@@ -600,7 +599,7 @@
                         throw new Error(data.error || 'Failed to send intake SMS');
                     }
                 }
-                
+
                 showError('Intake SMS sent successfully!');
             } catch (error) {
                 console.error('Error sending intake SMS:', error);
@@ -618,7 +617,7 @@
                 sendSmsModal.style.display = 'none';
             }
         });
-        
+
         // Check if server has Twilio configured
         async function checkTwilioConfig() {
             try {
@@ -633,9 +632,9 @@
                         message: "test"
                     })
                 });
-                
+
                 const data = await testResponse.json();
-                
+
                 // If we get a "Contact ID and message are required" error, Twilio might be configured
                 // If we get a "Twilio credentials not configured" error, show warning
                 if (data.error === 'Twilio credentials not configured') {
@@ -650,457 +649,6 @@
         // Initialize page
         fetchContacts();
         checkTwilioConfig();
-    </script>
-</body>
-</html>
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - AI Relationship Agent</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #eee;
-        }
-        .auth-info {
-            background: #f5f5f5;
-            padding: 10px;
-            border-radius: 5px;
-            font-size: 0.9em;
-        }
-        .contact-form {
-            background: #f9f9f9;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 30px;
-            display: none; /* Hidden by default */
-        }
-        input, button {
-            margin: 5px 0;
-            padding: 8px;
-        }
-        button {
-            background: #4CAF50;
-            color: white;
-            border: none;
-            padding: 10px 15px;
-            cursor: pointer;
-        }
-        #contactsList {
-            margin-top: 20px;
-        }
-        .contact-card {
-            background: white;
-            border: 1px solid #ddd;
-            padding: 15px;
-            margin-bottom: 15px;
-            border-radius: 5px;
-        }
-        .contact-card-header {
-            display: flex;
-            justify-content: space-between;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 10px;
-            margin-bottom: 10px;
-        }
-        .contact-actions {
-            display: flex;
-            gap: 10px;
-        }
-        .edit-btn {
-            background: #2196F3;
-        }
-        .save-btn {
-            background: #4CAF50;
-        }
-        .cancel-btn {
-            background: #ff9800;
-        }
-        .logout-btn {
-            background: #f44336;
-        }
-        .add-contact-btn {
-            margin-bottom: 20px;
-        }
-        .edit-mode {
-            display: none;
-        }
-        .empty-state {
-            text-align: center;
-            padding: 30px;
-            background: #f5f5f5;
-            border-radius: 8px;
-            margin-top: 20px;
-        }
-        .loading {
-            text-align: center;
-            padding: 20px;
-        }
-        .badge {
-            padding: 5px 10px;
-            border-radius: 5px;
-            font-weight: bold;
-            margin-left: 10px;
-        }
-        .badge-success {
-            background-color: #28a745;
-            color: white;
-        }
-        .badge-warning {
-            background-color: #ffc107;
-            color: black;
-        }
-        #smsFormContainer {
-            background: #f9f9f9;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 30px;
-            display: none; /* Hidden by default */
-        }
-    </style>
-</head>
-<body>
-    <header>
-        <h1>Relationship Management Dashboard</h1>
-        <div>
-            <button id="logoutBtn" class="logout-btn">Logout</button>
-        </div>
-    </header>
-
-    <div class="auth-info">
-        <p><strong>User ID:</strong> <span id="userIdDisplay">Not logged in</span></p>
-        <p><strong>Authentication:</strong> <span id="authStatus">Not authenticated</span></p>
-    </div>
-
-    <button id="toggleFormBtn" class="add-contact-btn">+ Add New Contact</button>
-
-    <div id="contactFormContainer" class="contact-form">
-        <h2>Add New Contact</h2>
-        <form id="addContactForm">
-            <div>
-                <input type="text" id="firstName" placeholder="First Name" required>
-                <input type="text" id="lastName" placeholder="Last Name" required>
-            </div>
-            <div>
-                <input type="tel" id="phoneNumber" placeholder="Phone Number (E.164 format, e.g. +12125551234)" required>
-            </div>
-            <div>
-                <input type="text" id="companyName" placeholder="Company Name (optional)">
-                <input type="url" id="linkedinUrl" placeholder="LinkedIn URL (optional)">
-            </div>
-            <button type="submit">Add Contact</button>
-            <button type="button" id="cancelBtn">Cancel</button>
-        </form>
-        <div id="formMessage"></div>
-    </div>
-
-    <div id="smsFormContainer" class="contact-form">
-        <h2>Send SMS</h2>
-        <form id="sendSmsForm">
-            <input type="hidden" id="smsContactId">
-            <p>To: <span id="smsRecipientName"></span></p>
-            <textarea id="smsMessage" placeholder="Enter your message" rows="4" required></textarea>
-            <button type="submit">Send SMS</button>
-            <button type="button" id="cancelSmsBtn">Cancel</button>
-        </form>
-        <div id="smsFormMessage"></div>
-    </div>
-
-
-    <h2>Your Contacts</h2>
-    <div id="contactsList" class="loading">
-        Loading contacts...
-    </div>
-
-    <script>
-        // Check for token in localStorage
-        const token = localStorage.getItem('token');
-        const userId = localStorage.getItem('userId');
-
-        if (!token || !userId) {
-            // Not logged in, redirect to login page
-            window.location.href = '/index.html';
-        } else {
-            // Display user info
-            document.getElementById('userIdDisplay').textContent = userId;
-            document.getElementById('authStatus').textContent = 'Authenticated';
-
-            // Load contacts
-            fetchContacts();
-        }
-        
-        // Function to send intake SMS
-        async function sendIntakeSMS(contactId, event) {
-            const button = event.target;
-            const formMessage = document.createElement('div');
-            formMessage.textContent = 'Sending intake SMS...';
-            button.parentNode.appendChild(formMessage);
-            button.disabled = true;
-            
-            try {
-                const response = await fetch(`/send-intake-sms/${contactId}`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    formMessage.textContent = 'Intake SMS sent successfully!';
-                    // Refresh contacts to update the UI
-                    setTimeout(() => {
-                        fetchContacts();
-                    }, 1500);
-                } else {
-                    formMessage.textContent = `Error: ${data.error || 'Unknown error'}`;
-                    if (data.details) formMessage.textContent += ` (${data.details})`;
-                    button.disabled = false;
-                }
-            } catch (error) {
-                formMessage.textContent = `Error: ${error.message}`;
-                button.disabled = false;
-            }
-        }
-
-        // Toggle contact form
-        document.getElementById('toggleFormBtn').addEventListener('click', () => {
-            document.getElementById('contactFormContainer').style.display = 'block';
-        });
-
-        document.getElementById('cancelBtn').addEventListener('click', () => {
-            document.getElementById('contactFormContainer').style.display = 'none';
-            document.getElementById('addContactForm').reset();
-        });
-
-        // SMS form cancel button
-        document.getElementById('cancelSmsBtn').addEventListener('click', () => {
-            document.getElementById('smsFormContainer').style.display = 'none';
-            document.getElementById('sendSmsForm').reset();
-        });
-
-        // Logout functionality
-        document.getElementById('logoutBtn').addEventListener('click', () => {
-            localStorage.removeItem('token');
-            localStorage.removeItem('userId');
-            window.location.href = '/index.html';
-        });
-
-        // Add contact form submission
-        document.getElementById('addContactForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formMessage = document.getElementById('formMessage');
-            formMessage.textContent = 'Adding contact...';
-
-            try {
-                const response = await fetch('/add-contact', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({
-                        first_name: document.getElementById('firstName').value,
-                        last_name: document.getElementById('lastName').value,
-                        phone_number: document.getElementById('phoneNumber').value,
-                        company_name: document.getElementById('companyName').value,
-                        linkedin_url: document.getElementById('linkedinUrl').value
-                    })
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    formMessage.textContent = data.message;
-                    if (data.text_sent) {
-                        formMessage.textContent += ' An automated text message was sent to the contact.';
-                    }
-                    document.getElementById('addContactForm').reset();
-                    document.getElementById('contactFormContainer').style.display = 'none';
-                    // Refresh contacts list
-                    fetchContacts();
-                } else {
-                    formMessage.textContent = `Error: ${data.error || 'Unknown error'}`;
-                    if (data.details) formMessage.textContent += ` (${data.details})`;
-                }
-            } catch (error) {
-                formMessage.textContent = `Error: ${error.message}`;
-            }
-        });
-
-        // SMS form submission
-        document.getElementById('sendSmsForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formMessage = document.getElementById('smsFormMessage');
-            formMessage.textContent = 'Sending message...';
-
-            try {
-                const response = await fetch('/send-sms', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({
-                        contactId: document.getElementById('smsContactId').value,
-                        message: document.getElementById('smsMessage').value
-                    })
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    formMessage.textContent = data.message;
-                    document.getElementById('sendSmsForm').reset();
-                    document.getElementById('smsFormContainer').style.display = 'none';
-                } else {
-                    formMessage.textContent = `Error: ${data.error || 'Unknown error'}`;
-                    if (data.details) formMessage.textContent += ` (${data.details})`;
-                }
-            } catch (error) {
-                formMessage.textContent = `Error: ${error.message}`;
-            }
-        });
-
-        // Fetch and display contacts
-        async function fetchContacts() {
-            const contactsList = document.getElementById('contactsList');
-            contactsList.innerHTML = '<p>Loading contacts...</p>';
-
-            try {
-                const response = await fetch('/get-contacts', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    if (data.contacts.length === 0) {
-                        contactsList.innerHTML = '<p>No contacts found. Add your first contact!</p>';
-                    } else {
-                        contactsList.innerHTML = '';
-                        data.contacts.forEach(contact => {
-                            const contactCard = document.createElement('div');
-                            contactCard.className = 'contact-card';
-
-                            // Get intake status badge
-                            const intakeStatus = contact.has_intake ? 
-                                '<span class="badge badge-success">Intake Complete</span>' : 
-                                '<span class="badge badge-warning">No Intake</span>';
-
-                            contactCard.innerHTML = `
-                                <div class="contact-card-header">
-                                    <h3>${contact.first_name} ${contact.last_name} ${intakeStatus}</h3>
-                                    <div class="contact-actions">
-                                        <button onclick="showSmsForm(${contact.id}, '${contact.first_name} ${contact.last_name}')">SMS</button>
-                                        <button onclick="editContact(${contact.id}, '${contact.first_name}', '${contact.last_name}', '${contact.phone_number}', '${contact.company_name || ''}', '${contact.linkedin_url || ''}')">Edit</button>
-                                        ${!contact.has_intake ? `<button onclick="sendIntakeSMS(${contact.id}, event)">Send Intake SMS</button>` : ''}
-                                    </div>
-                                </div>
-                                <p><strong>Phone:</strong> ${contact.phone_number}</p>
-                                ${contact.company_name ? `<p><strong>Company:</strong> ${contact.company_name}</p>` : ''}
-                                ${contact.linkedin_url ? `<p><strong>LinkedIn:</strong> <a href="${contact.linkedin_url}" target="_blank">${contact.linkedin_url}</a></p>` : ''}
-                                <p><strong>Added:</strong> ${new Date(contact.created_at).toLocaleString()}</p>
-                            `;
-                            contactsList.appendChild(contactCard);
-                        });
-                    }
-                } else {
-                    contactsList.innerHTML = `<p>Error loading contacts: ${data.error || 'Unknown error'}</p>`;
-                }
-            } catch (error) {
-                contactsList.innerHTML = `<p>Error: ${error.message}</p>`;
-            }
-        }
-
-        // Show SMS form
-        function showSmsForm(contactId, contactName) {
-            // Show form for SMS
-            document.getElementById('smsFormContainer').style.display = 'block';
-
-            // Set form data
-            document.getElementById('smsContactId').value = contactId;
-            document.getElementById('smsRecipientName').textContent = contactName;
-            document.getElementById('smsMessage').focus();
-        }
-
-        // Edit contact function
-        function editContact(id, firstName, lastName, phoneNumber, companyName, linkedinUrl) {
-            // Show form for editing
-            document.getElementById('contactFormContainer').style.display = 'block';
-
-            // Populate form with contact data
-            document.getElementById('firstName').value = firstName;
-            document.getElementById('lastName').value = lastName;
-            document.getElementById('phoneNumber').value = phoneNumber;
-            document.getElementById('companyName').value = companyName;
-            document.getElementById('linkedinUrl').value = linkedinUrl;
-
-            // Change form submission to update instead of add
-            const form = document.getElementById('addContactForm');
-            form.onsubmit = async (e) => {
-                e.preventDefault();
-                updateContact(id);
-            };
-        }
-
-        // Update contact function
-        async function updateContact(id) {
-            const formMessage = document.getElementById('formMessage');
-            formMessage.textContent = 'Updating contact...';
-
-            try {
-                const response = await fetch(`/update-contact/${id}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({
-                        first_name: document.getElementById('firstName').value,
-                        last_name: document.getElementById('lastName').value,
-                        phone_number: document.getElementById('phoneNumber').value,
-                        company_name: document.getElementById('companyName').value,
-                        linkedin_url: document.getElementById('linkedinUrl').value
-                    })
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    formMessage.textContent = data.message;
-                    document.getElementById('addContactForm').reset();
-                    document.getElementById('contactFormContainer').style.display = 'none';
-
-                    // Reset form to add mode
-                    document.getElementById('addContactForm').onsubmit = null;
-
-                    // Refresh contacts list
-                    fetchContacts();
-                } else {
-                    formMessage.textContent = `Error: ${data.error || 'Unknown error'}`;
-                    if (data.details) formMessage.textContent += ` (${data.details})`;
-                }
-            } catch (error) {
-                formMessage.textContent = `Error: ${error.message}`;
-            }
-        }
     </script>
 </body>
 </html>
