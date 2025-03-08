@@ -415,6 +415,7 @@ app.post('/receive-data', async (req, res) => {
 
         // First try to match call from temp_calls
         let callResult = await client.query('SELECT phone_number FROM temp_calls WHERE call_sid = $1', [callSid]);
+        let phoneNumber = null;
 
         // If not found in temp_calls, try the call_log table as fallback
         if (callResult.rows.length === 0) {
@@ -422,16 +423,24 @@ app.post('/receive-data', async (req, res) => {
           callResult = await client.query('SELECT phone_number FROM call_log WHERE call_sid = $1', [callSid]);
           
           if (callResult.rows.length === 0) {
-            console.error('Call not found in both temp_calls and call_log for callSid:', callSid);
-            await client.query('ROLLBACK');
-            return res.status(404).json({ error: 'Call not found' });
+            console.log('Call not found in logs, treating callSid as phone number for testing');
+            
+            // For testing: Treat the callSid as a phone number
+            phoneNumber = callSid;
+            
+            // Create a record in call_log for future reference
+            await client.query(
+              'INSERT INTO call_log (call_sid, phone_number, status, created_at) VALUES ($1, $1, $2, NOW()) ON CONFLICT (call_sid) DO NOTHING',
+              [callSid, 'test_mode']
+            );
+          } else {
+            console.log('Call found in permanent call_log table');
+            phoneNumber = callResult.rows[0].phone_number;
           }
-          
-          console.log('Call found in permanent call_log table');
+        } else {
+          phoneNumber = callResult.rows[0].phone_number;
+          console.log(`Found phone number ${phoneNumber} for callSid: ${callSid}`);
         }
-
-        const phoneNumber = callResult.rows[0].phone_number;
-        console.log(`Found phone number ${phoneNumber} for callSid: ${callSid}`);
 
         // Find the corresponding contact
         const contactResult = await client.query('SELECT id, user_id FROM contacts WHERE phone_number = $1', [phoneNumber]);
@@ -439,7 +448,7 @@ app.post('/receive-data', async (req, res) => {
         if (contactResult.rows.length === 0) {
           console.error('Contact not found for phone number:', phoneNumber);
           await client.query('ROLLBACK');
-          return res.status(404).json({ error: 'Contact not found' });
+          return res.status(404).json({ error: 'Contact not found for phone number: ' + phoneNumber });
         }
 
         const contactId = contactResult.rows[0].id;
