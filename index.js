@@ -21,6 +21,7 @@ const createTables = async () => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Create users table
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -28,6 +29,8 @@ const createTables = async () => {
         password VARCHAR(255) NOT NULL
       )
     `);
+    
+    // Create relationships table
     await client.query(`
       CREATE TABLE IF NOT EXISTS relationships (
         id SERIAL PRIMARY KEY,
@@ -37,6 +40,8 @@ const createTables = async () => {
         check_in_cadence VARCHAR(50)
       )
     `);
+    
+    // Create contacts table
     await client.query(`
       CREATE TABLE IF NOT EXISTS contacts (
         id SERIAL PRIMARY KEY,
@@ -49,6 +54,28 @@ const createTables = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    
+    // Check if contacts table needs column updates
+    const columnCheck = await client.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'contacts' 
+      AND column_name = 'first_name'
+    `);
+    
+    // If first_name doesn't exist, add all possibly missing columns
+    if (columnCheck.rows.length === 0) {
+      console.log('Migrating contacts table - adding missing columns');
+      await client.query(`
+        ALTER TABLE contacts
+        ADD COLUMN IF NOT EXISTS first_name VARCHAR(100),
+        ADD COLUMN IF NOT EXISTS last_name VARCHAR(100),
+        ADD COLUMN IF NOT EXISTS company_name VARCHAR(100),
+        ADD COLUMN IF NOT EXISTS linkedin_url VARCHAR(255)
+      `);
+    }
+    
+    // Create temp_calls table
     await client.query(`
       CREATE TABLE IF NOT EXISTS temp_calls (
         id SERIAL PRIMARY KEY,
