@@ -187,11 +187,12 @@
         }
         
         // Function to send intake SMS
-        async function sendIntakeSMS(contactId) {
+        async function sendIntakeSMS(contactId, event) {
+            const button = event.target;
             const formMessage = document.createElement('div');
             formMessage.textContent = 'Sending intake SMS...';
-            event.target.parentNode.appendChild(formMessage);
-            event.target.disabled = true;
+            button.parentNode.appendChild(formMessage);
+            button.disabled = true;
             
             try {
                 const response = await fetch(`/send-intake-sms/${contactId}`, {
@@ -212,11 +213,11 @@
                 } else {
                     formMessage.textContent = `Error: ${data.error || 'Unknown error'}`;
                     if (data.details) formMessage.textContent += ` (${data.details})`;
-                    event.target.disabled = false;
+                    button.disabled = false;
                 }
             } catch (error) {
                 formMessage.textContent = `Error: ${error.message}`;
-                event.target.disabled = false;
+                button.disabled = false;
             }
         }
 
@@ -353,7 +354,7 @@
                                     <div class="contact-actions">
                                         <button onclick="showSmsForm(${contact.id}, '${contact.first_name} ${contact.last_name}')">SMS</button>
                                         <button onclick="editContact(${contact.id}, '${contact.first_name}', '${contact.last_name}', '${contact.phone_number}', '${contact.company_name || ''}', '${contact.linkedin_url || ''}')">Edit</button>
-                                        ${!contact.has_intake ? `<button onclick="sendIntakeSMS(${contact.id})">Send Intake SMS</button>` : ''}
+                                        ${!contact.has_intake ? `<button onclick="sendIntakeSMS(${contact.id}, event)">Send Intake SMS</button>` : ''}
                                     </div>
                                 </div>
                                 <p><strong>Phone:</strong> ${contact.phone_number}</p>
