@@ -664,9 +664,10 @@ app.post('/send-sms', verifyToken, async (req, res) => {
     
     // Check if Twilio credentials are configured
     if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
+      console.error('Missing Twilio credentials in environment variables');
       return res.status(400).json({ 
         error: 'Twilio credentials not configured',
-        details: 'Please set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER environment variables'
+        details: 'The administrator needs to set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER environment variables'
       });
     }
     
@@ -788,10 +789,11 @@ app.post('/send-intake-sms/:contactId', verifyToken, async (req, res) => {
 
       // Check if Twilio credentials are configured
       if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
+        console.error('Missing Twilio credentials in environment variables for intake SMS');
         client.release();
         return res.status(400).json({ 
           error: 'Twilio credentials not configured',
-          details: 'Please set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER environment variables'
+          details: 'The administrator needs to set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER environment variables'
         });
       }
 
