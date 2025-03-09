@@ -125,25 +125,40 @@ const createTables = async () => {
         processed_at TIMESTAMP
       )
     `);
+
+    // Check if intake_responses table exists
     const tableCheckResult = await client.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_name = 'intake_responses'
       )
     `);
+    
     if (tableCheckResult.rows[0].exists) {
-      const columnCheckResult = await client.query(`
-        SELECT EXISTS (
-          SELECT FROM information_schema.columns 
-          WHERE table_name = 'intake_responses' AND column_name = 'user_id'
-        )
-      `);
-      if (!columnCheckResult.rows[0].exists) {
-        await client.query(`
-          ALTER TABLE intake_responses ADD COLUMN user_id INTEGER REFERENCES users(id)
-        `);
+      console.log('Intake responses table exists, checking for required columns...');
+      
+      // Check for each required column and add if missing
+      const requiredColumns = [
+        'user_id', 'communication_style', 'goals', 'values', 
+        'professional_goals', 'partnership_expectations', 'raw_transcript'
+      ];
+      
+      for (const column of requiredColumns) {
+        const columnExists = await client.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.columns 
+            WHERE table_name = 'intake_responses' AND column_name = $1
+          )
+        `, [column]);
+        
+        if (!columnExists.rows[0].exists) {
+          console.log(`Adding missing column '${column}' to intake_responses table`);
+          await client.query(`ALTER TABLE intake_responses ADD COLUMN ${column} TEXT`);
+        }
       }
     } else {
+      // Create the intake_responses table with all required columns
+      console.log('Creating intake_responses table with all required columns');
       await client.query(`
         CREATE TABLE IF NOT EXISTS intake_responses (
           id SERIAL PRIMARY KEY,
@@ -155,11 +170,12 @@ const createTables = async () => {
           professional_goals TEXT,
           partnership_expectations TEXT,
           raw_transcript TEXT,
-          response_text VARCHAR,
+          response_text TEXT,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
     }
+    
     await client.query('COMMIT');
     console.log('Database schema updated for relationship management');
   } catch (error) {
@@ -524,11 +540,14 @@ app.post('/receive-data', async (req, res) => {
 
         if (contactResult.rows.length === 0) {
           console.error('Contact not found for phone number:', phoneNumber);
+          console.log('Will return error to Eleven Labs. Contact needs to be created manually.');
           await client.query('ROLLBACK');
           return res.status(404).json({ error: 'Contact not found for phone number: ' + phoneNumber });
         }
 
         const contactId = contactResult.rows[0].id;
+        const userId = contactResult.rows[0].user_id;
+        console.log(`Found contact (ID: ${contactId}) for user (ID: ${userId})`);
         userId = contactResult.rows[0].user_id;
         console.log(`Found contact (ID: ${contactId}) for user (ID: ${userId})`);
 
