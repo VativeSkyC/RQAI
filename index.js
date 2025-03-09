@@ -434,10 +434,11 @@ app.post('/receive-data', async (req, res) => {
   let isElevenLabsCallback = false;
   let userId = null;
 
-  // Check if this is a verifiable Eleven Labs callback with callSid
-  if (req.body.callSid) {
+  // Check if this is a verifiable Eleven Labs callback with callSid or caller
+  if (req.body.callSid || req.body.caller) {
     isElevenLabsCallback = true;
-    console.log('Eleven Labs callback detected with callSid:', req.body.callSid);
+    console.log('Eleven Labs callback detected', 
+      req.body.callSid ? `with callSid: ${req.body.callSid}` : `with caller: ${req.body.caller}`);
   } else {
     // Standard JWT verification for direct API calls
     try {
@@ -459,6 +460,7 @@ app.post('/receive-data', async (req, res) => {
   if (isElevenLabsCallback) {
     const { 
       callSid, 
+      caller,
       communication_style, 
       goals, 
       values, 
@@ -467,72 +469,86 @@ app.post('/receive-data', async (req, res) => {
       raw_transcript 
     } = req.body;
 
-    console.log('Processing Eleven Labs data for callSid:', callSid);
+    console.log('Processing Eleven Labs data:', 
+      callSid ? `callSid: ${callSid}` : `caller: ${caller}`);
     console.log('Request body:', JSON.stringify(req.body, null, 2));
-
-    // Log every request for debugging
-    console.log(`DATABASE DEBUG - Received callSid: ${callSid}`);
     
     try {
       const client = await pool.connect();
       
-      // Debug: Check what's in the database
-      const debugCallLog = await client.query('SELECT call_sid, phone_number FROM call_log LIMIT 10');
-      console.log('DATABASE DEBUG - Contents of call_log:', JSON.stringify(debugCallLog.rows, null, 2));
-
       try {
         await client.query('BEGIN');
-
-        // First try to match call from temp_calls
-        let callResult = await client.query('SELECT phone_number FROM temp_calls WHERE call_sid = $1', [callSid]);
+        
         let phoneNumber = null;
-
-        // If not found in temp_calls, try the call_log table as fallback
-        if (callResult.rows.length === 0) {
-          console.log('Call not found in temp_calls, checking call_log fallback...');
+        
+        // If we have a caller phone number directly, use it
+        if (caller) {
+          phoneNumber = caller;
+          console.log(`Using direct caller phone number: ${phoneNumber}`);
           
-          // First, log the exact query we're performing
-          console.log(`DATABASE DEBUG - Executing query: SELECT phone_number FROM call_log WHERE call_sid = '${callSid}'`);
+          // Create a record in call_log for reference
+          await client.query(
+            'INSERT INTO call_log (call_sid, phone_number, status, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (call_sid) DO NOTHING',
+            [callSid || `caller-${Date.now()}`, phoneNumber, 'direct_caller']
+          );
+        } 
+        // Otherwise try to find by callSid as before
+        else if (callSid) {
+          console.log('Looking up phone number by callSid:', callSid);
           
-          // Perform case-insensitive search to handle potential formatting issues
-          callResult = await client.query('SELECT phone_number FROM call_log WHERE LOWER(call_sid) = LOWER($1)', [callSid]);
+          // First try to match call from temp_calls
+          let callResult = await client.query('SELECT phone_number FROM temp_calls WHERE call_sid = $1', [callSid]);
           
+          // If not found in temp_calls, try the call_log table as fallback
           if (callResult.rows.length === 0) {
-            console.log('Call not found in logs with exact match, trying partial match...');
+            console.log('Call not found in temp_calls, checking call_log fallback...');
             
-            // Try partial match as fallback (in case SID format changed)
-            callResult = await client.query("SELECT phone_number FROM call_log WHERE call_sid LIKE $1", [`%${callSid.slice(-8)}%`]);
+            // Perform case-insensitive search to handle potential formatting issues
+            callResult = await client.query('SELECT phone_number FROM call_log WHERE LOWER(call_sid) = LOWER($1)', [callSid]);
             
             if (callResult.rows.length === 0) {
-              // If we receive a phone number in the payload, use that
-              if (req.body.phone_number) {
-                console.log(`Using phone_number from payload: ${req.body.phone_number}`);
-                phoneNumber = req.body.phone_number;
-                
-                // Create a record in call_log for this session
-                await client.query(
-                  'INSERT INTO call_log (call_sid, phone_number, status, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (call_sid) DO NOTHING',
-                  [callSid, phoneNumber, 'from_payload']
-                );
+              console.log('Call not found in logs with exact match, trying partial match...');
+              
+              // Try partial match as fallback (in case SID format changed)
+              callResult = await client.query("SELECT phone_number FROM call_log WHERE call_sid LIKE $1", [`%${callSid.slice(-8)}%`]);
+              
+              if (callResult.rows.length === 0) {
+                // If we receive a phone_number in the payload, use that
+                if (req.body.phone_number) {
+                  console.log(`Using phone_number from payload: ${req.body.phone_number}`);
+                  phoneNumber = req.body.phone_number;
+                  
+                  // Create a record in call_log for this session
+                  await client.query(
+                    'INSERT INTO call_log (call_sid, phone_number, status, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (call_sid) DO NOTHING',
+                    [callSid, phoneNumber, 'from_payload']
+                  );
+                } else {
+                  console.error(`ERROR: Could not find call record for SID: ${callSid}`);
+                  await client.query('ROLLBACK');
+                  return res.status(404).json({ 
+                    error: 'Call not found',
+                    message: 'No matching call found in database. Please include phone_number or caller in your request.'
+                  });
+                }
               } else {
-                console.error(`ERROR: Could not find call record for SID: ${callSid}`);
-                await client.query('ROLLBACK');
-                return res.status(404).json({ 
-                  error: 'Call not found',
-                  message: 'No matching call found in database. Please include phone_number in your request.'
-                });
+                console.log(`Found call via partial SID match: ${callResult.rows[0].phone_number}`);
+                phoneNumber = callResult.rows[0].phone_number;
               }
             } else {
-              console.log(`Found call via partial SID match: ${callResult.rows[0].phone_number}`);
+              console.log('Call found in permanent call_log table');
               phoneNumber = callResult.rows[0].phone_number;
             }
           } else {
-            console.log('Call found in permanent call_log table');
             phoneNumber = callResult.rows[0].phone_number;
+            console.log(`Found phone number ${phoneNumber} for callSid: ${callSid}`);
           }
         } else {
-          phoneNumber = callResult.rows[0].phone_number;
-          console.log(`Found phone number ${phoneNumber} for callSid: ${callSid}`);
+          await client.query('ROLLBACK');
+          return res.status(400).json({ 
+            error: 'Missing caller information',
+            message: 'Either callSid, caller, or phone_number must be provided'
+          });
         }
 
         // Find the corresponding contact
@@ -546,12 +562,10 @@ app.post('/receive-data', async (req, res) => {
         }
 
         const contactId = contactResult.rows[0].id;
-        const userId = contactResult.rows[0].user_id;
-        console.log(`Found contact (ID: ${contactId}) for user (ID: ${userId})`);
         userId = contactResult.rows[0].user_id;
         console.log(`Found contact (ID: ${contactId}) for user (ID: ${userId})`);
 
-        // Store call data
+        // Store intake data
         await client.query(
           `INSERT INTO intake_responses (
             contact_id, user_id, communication_style, goals, values, 
@@ -569,14 +583,16 @@ app.post('/receive-data', async (req, res) => {
           ]
         );
 
-        // Update call_log to mark as processed
-        await client.query(
-          'UPDATE call_log SET status = $1, processed_at = NOW() WHERE call_sid = $2',
-          ['processed', callSid]
-        );
+        // Update call_log to mark as processed if we have a callSid
+        if (callSid) {
+          await client.query(
+            'UPDATE call_log SET status = $1, processed_at = NOW() WHERE call_sid = $2',
+            ['processed', callSid]
+          );
 
-        // Clean up temp_calls (if it exists there)
-        await client.query('DELETE FROM temp_calls WHERE call_sid = $1', [callSid]);
+          // Clean up temp_calls (if it exists there)
+          await client.query('DELETE FROM temp_calls WHERE call_sid = $1', [callSid]);
+        }
 
         await client.query('COMMIT');
         console.log(`Successfully stored Eleven Labs data for contact ID ${contactId}, user ID ${userId}`);
@@ -1107,3 +1123,37 @@ server.on('error', (error) => {
 
 // Start the server with the primary port
 startServer(PORT);
+
+// Debug endpoint to check contacts by phone number
+app.get('/debug/contacts/:phoneNumber', async (req, res) => {
+  try {
+    const phoneNumber = req.params.phoneNumber;
+    console.log(`Looking up contact with phone number: ${phoneNumber}`);
+    
+    const client = await pool.connect();
+    try {
+      const contactResult = await client.query(
+        'SELECT id, first_name, last_name, phone_number, user_id, created_at FROM contacts WHERE phone_number = $1',
+        [phoneNumber]
+      );
+      
+      if (contactResult.rows.length === 0) {
+        return res.status(404).json({ 
+          error: 'No contact found',
+          message: 'No contact found with this phone number'
+        });
+      }
+      
+      return res.json({
+        success: true,
+        contact: contactResult.rows[0],
+        message: 'Contact found'
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Error looking up contact:', error);
+    res.status(500).json({ error: 'Server error', details: error.message });
+  }
+});
