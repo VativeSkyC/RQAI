@@ -945,33 +945,45 @@ function startServer(port, fallbackIndex = 0) {
   keepAlive();
 
   try {
+    // First, make sure we don't have any existing tunnels
+    try {
+      console.log('Cleaning up any existing ngrok tunnels...');
+      await ngrok.kill();
+      console.log('Successfully terminated any existing ngrok processes');
+    } catch (killError) {
+      console.log('No existing ngrok processes to kill or error:', killError.message);
+    }
+    
     // Simplified ngrok setup approach
     let ngrokOptions = {
-      addr: PORT,
+      addr: activePort, // Use the active port that was successfully bound
       onLogEvent: (message) => console.log(`NGROK LOG: ${message}`),
     };
     
     // Add authtoken and subdomain if available
     if (process.env.NGROK_AUTH_TOKEN) {
       ngrokOptions.authtoken = process.env.NGROK_AUTH_TOKEN;
+      console.log('✅ Found NGROK_AUTH_TOKEN in environment variables');
       
       // Only try to use subdomain if we have an auth token
-      if (process.env.NGROK_SUBDOMAIN || 'ai-relationship-agent') {
-        ngrokOptions.subdomain = process.env.NGROK_SUBDOMAIN || 'ai-relationship-agent';
+      if (process.env.NGROK_SUBDOMAIN) {
+        ngrokOptions.subdomain = process.env.NGROK_SUBDOMAIN;
+        console.log(`✅ Using custom subdomain: ${ngrokOptions.subdomain}`);
+      } else {
+        ngrokOptions.subdomain = 'ai-relationship-agent';
+        console.log(`✅ Using default subdomain: ${ngrokOptions.subdomain}`);
       }
     } else {
       console.warn('⚠️ NGROK_AUTH_TOKEN is not set. Using random URL.');
     }
     
     // Connect to ngrok with our options
-    console.log('Attempting to establish ngrok tunnel with options:', JSON.stringify({
+    console.log(`\n🔄 ESTABLISHING NGROK TUNNEL on port ${activePort}...`);
+    console.log('Options:', JSON.stringify({
       ...ngrokOptions,
-      addr: activePort, // Use the active port that was successfully bound
       authtoken: ngrokOptions.authtoken ? '***HIDDEN***' : undefined
-    }));
+    }, null, 2));
     
-    // Update the port in options to use the active port
-    ngrokOptions.addr = activePort;
     const url = await ngrok.connect(ngrokOptions);
     
     console.log('\n\n');
