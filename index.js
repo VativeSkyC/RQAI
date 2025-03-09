@@ -825,6 +825,50 @@ app.post('/send-sms', verifyToken, async (req, res) => {
   }
 });
 
+// Get intake responses endpoint
+app.get('/get-intake-responses/:contactId', verifyToken, async (req, res) => {
+  try {
+    const contactId = req.params.contactId;
+    const userId = req.userId;
+
+    const client = await pool.connect();
+    
+    // First verify the contact belongs to the user
+    const contactCheck = await client.query(
+      'SELECT id FROM contacts WHERE id = $1 AND user_id = $2',
+      [contactId, userId]
+    );
+    
+    if (contactCheck.rows.length === 0) {
+      client.release();
+      return res.status(403).json({ error: 'Contact not found or access denied' });
+    }
+    
+    // Get all intake responses for this contact
+    const result = await client.query(
+      `SELECT 
+        id, 
+        communication_style, 
+        goals, 
+        values, 
+        professional_goals, 
+        partnership_expectations, 
+        raw_transcript,
+        created_at 
+      FROM intake_responses 
+      WHERE contact_id = $1 AND user_id = $2
+      ORDER BY created_at DESC`,
+      [contactId, userId]
+    );
+    
+    client.release();
+    res.json({ intake_responses: result.rows });
+  } catch (error) {
+    console.error('Error fetching intake responses:', error.message);
+    res.status(500).json({ error: 'Failed to retrieve intake responses' });
+  }
+});
+
 // Update contact endpoint
 app.put('/update-contact/:id', verifyToken, async (req, res) => {
   try {

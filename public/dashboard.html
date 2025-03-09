@@ -68,6 +68,36 @@
         .intake-button {
             background-color: #9C27B0;
         }
+        .view-intake-button {
+            background-color: #FF5722;
+        }
+        .intake-modal-content {
+            max-width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .intake-section {
+            margin-bottom: 20px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .intake-section h3 {
+            margin-bottom: 5px;
+            color: #333;
+        }
+        .intake-date {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .intake-empty {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        .intake-tabs {
+            margin-bottom: 15px;
+        }
         .add-contact {
             margin-bottom: 20px;
         }
@@ -260,6 +290,18 @@
         </div>
     </div>
 
+    <!-- View Intake Responses Modal -->
+    <div id="viewIntakeModal" class="modal">
+        <div class="modal-content intake-modal-content">
+            <span class="close" id="closeViewIntakeModal">&times;</span>
+            <h2>Intake Responses</h2>
+            <p>Contact: <span id="intakeContactName"></span></p>
+            <div id="intakeResponsesContent">
+                <!-- Intake responses will be loaded here -->
+            </div>
+        </div>
+    </div>
+
     <script>
         // Check if user is logged in
         const token = localStorage.getItem('token');
@@ -390,7 +432,13 @@
                 editButton.addEventListener('click', () => openEditContactModal(contact));
                 contactActions.appendChild(editButton);
 
-                if (!contact.has_intake) {
+                if (contact.has_intake) {
+                    const viewIntakeButton = document.createElement('button');
+                    viewIntakeButton.className = 'view-intake-button';
+                    viewIntakeButton.textContent = 'View Intake';
+                    viewIntakeButton.addEventListener('click', () => openViewIntakeModal(contact));
+                    contactActions.appendChild(viewIntakeButton);
+                } else {
                     const intakeButton = document.createElement('button');
                     intakeButton.className = 'intake-button';
                     intakeButton.textContent = 'Send Intake SMS';
@@ -607,6 +655,110 @@
             }
         }
 
+        // View Intake Modal
+        const viewIntakeModal = document.getElementById('viewIntakeModal');
+        document.getElementById('closeViewIntakeModal').addEventListener('click', () => {
+            viewIntakeModal.style.display = 'none';
+        });
+
+        // Function to fetch and display intake responses
+        async function openViewIntakeModal(contact) {
+            document.getElementById('intakeContactName').textContent = `${contact.first_name} ${contact.last_name}`;
+            const intakeResponsesContent = document.getElementById('intakeResponsesContent');
+            intakeResponsesContent.innerHTML = '<p>Loading intake responses...</p>';
+            viewIntakeModal.style.display = 'block';
+
+            try {
+                const response = await fetch(`/get-intake-responses/${contact.id}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                displayIntakeResponses(data.intake_responses);
+            } catch (error) {
+                console.error('Error fetching intake responses:', error);
+                intakeResponsesContent.innerHTML = '<p>Error loading intake responses. Please try again.</p>';
+            }
+        }
+
+        // Display intake responses in the modal
+        function displayIntakeResponses(responses) {
+            const intakeResponsesContent = document.getElementById('intakeResponsesContent');
+            
+            if (responses.length === 0) {
+                intakeResponsesContent.innerHTML = '<div class="intake-empty">No intake responses found.</div>';
+                return;
+            }
+
+            intakeResponsesContent.innerHTML = '';
+
+            responses.forEach(response => {
+                const responseDiv = document.createElement('div');
+                responseDiv.className = 'intake-section';
+
+                // Add date heading
+                const dateHeading = document.createElement('h3');
+                dateHeading.textContent = 'Intake Session';
+                responseDiv.appendChild(dateHeading);
+
+                // Add date
+                const dateElement = document.createElement('div');
+                dateElement.className = 'intake-date';
+                dateElement.textContent = new Date(response.created_at).toLocaleString();
+                responseDiv.appendChild(dateElement);
+
+                // Add each response section if it exists
+                const sections = [
+                    { name: 'Communication Style', field: 'communication_style' },
+                    { name: 'Goals', field: 'goals' },
+                    { name: 'Values', field: 'values' },
+                    { name: 'Professional Goals', field: 'professional_goals' },
+                    { name: 'Partnership Expectations', field: 'partnership_expectations' }
+                ];
+
+                sections.forEach(section => {
+                    if (response[section.field]) {
+                        const sectionElement = document.createElement('div');
+                        sectionElement.className = 'form-group';
+                        
+                        const sectionLabel = document.createElement('label');
+                        sectionLabel.textContent = section.name;
+                        sectionElement.appendChild(sectionLabel);
+                        
+                        const sectionContent = document.createElement('p');
+                        sectionContent.textContent = response[section.field];
+                        sectionElement.appendChild(sectionContent);
+                        
+                        responseDiv.appendChild(sectionElement);
+                    }
+                });
+
+                // Add raw transcript if it exists (collapsible)
+                if (response.raw_transcript) {
+                    const transcriptDiv = document.createElement('div');
+                    transcriptDiv.className = 'form-group';
+                    
+                    const transcriptLabel = document.createElement('label');
+                    transcriptLabel.textContent = 'Raw Transcript';
+                    transcriptDiv.appendChild(transcriptLabel);
+                    
+                    const transcriptContent = document.createElement('p');
+                    transcriptContent.textContent = response.raw_transcript;
+                    transcriptDiv.appendChild(transcriptContent);
+                    
+                    responseDiv.appendChild(transcriptDiv);
+                }
+
+                intakeResponsesContent.appendChild(responseDiv);
+            });
+        }
+
         // Close modals when clicking outside
         window.addEventListener('click', (event) => {
             if (event.target === addContactModal) {
@@ -615,6 +767,8 @@
                 editContactModal.style.display = 'none';
             } else if (event.target === sendSmsModal) {
                 sendSmsModal.style.display = 'none';
+            } else if (event.target === viewIntakeModal) {
+                viewIntakeModal.style.display = 'none';
             }
         });
 
