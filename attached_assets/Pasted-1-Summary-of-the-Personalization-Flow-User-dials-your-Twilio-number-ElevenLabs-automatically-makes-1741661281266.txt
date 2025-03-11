@@ -1,0 +1,153 @@
+1. Summary of the Personalization Flow
+User dials your Twilio number.
+ElevenLabs automatically makes an HTTP POST to your “Personalization Webhook” (let’s call it /twilio-personalization) with:
+caller_id: caller’s phone number
+agent_id: ID of the ElevenLabs agent
+called_number: your Twilio number
+call_sid: unique call identifier
+Your code (in Replit) looks up (or creates) the caller in the contacts table.
+You return JSON telling ElevenLabs any “dynamic variables” (like first_name or membership_status) and optionally override conversation settings (voice_id, prompt, etc.).
+ElevenLabs personalizes the call using that data.
+After the call, if you like, ElevenLabs can still POST transcripts/responses to your existing /receive-data route for storage.
+All Twilio inbound calls are “claimed” directly by ElevenLabs (rather than hitting your /voice route). The personalization route is called before the call connects, so the user hears the AI agent with the custom data right away.
+
+2. What to Build on Replit
+A new endpoint: /twilio-personalization.
+A minor DB lookup: to find or create the contact by caller_id.
+A JSON response containing your dynamic variables and optional overrides.
+Environment Variables:
+
+You may want a secret key (e.g. ELEVENLABS_SECRET) that ElevenLabs passes in a header so you can verify the request is legit.
+Your existing DATABASE_URL, JWT_SECRET, Twilio credentials, etc. remain unchanged.
+Note: In Replit, add environment variables via the “Secrets” panel (padlock icon) or in the .replit configuration.
+
+3. Example Personalization Webhook Code
+Below is a drop-in route you can place inside your existing index.js (the big file you shared). Scroll to the bottom (but before the startServer(PORT) call) and add this new route. Then push it to your Replit instance.
+
+js
+Copy
+/**
+ * Personalization Webhook for ElevenLabs inbound Twilio calls
+ */
+app.post('/twilio-personalization', async (req, res) => {
+  try {
+    // 1. Optional: Verify a secret header if you configured it in ElevenLabs
+    const expectedSecret = process.env.ELEVENLABS_SECRET;
+    const incomingSecret = req.headers['x-el-secret'];
+    if (expectedSecret && expectedSecret !== incomingSecret) {
+      console.log('Invalid or missing x-el-secret in personalization webhook');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    // 2. Extract data from ElevenLabs
+    const { caller_id, agent_id, called_number, call_sid } = req.body;
+    if (!caller_id || !call_sid) {
+      console.error('Missing caller_id or call_sid in personalization webhook');
+      return res.status(400).json({ error: 'Invalid payload' });
+    }
+    console.log('Personalization webhook triggered:', req.body);
+
+    // 3. Look up (or create) the contact in your DB
+    const client = await pool.connect();
+    let contact;
+    try {
+      await client.query('BEGIN');
+      const findContact = await client.query(
+        `SELECT id, first_name, last_name
+         FROM contacts
+         WHERE phone_number = $1
+         LIMIT 1`,
+        [caller_id]
+      );
+
+      if (findContact.rows.length === 0) {
+        // Create contact if none found
+        const insert = await client.query(
+          `INSERT INTO contacts (
+             phone_number, first_name, created_at
+           ) VALUES ($1, 'Unknown', NOW())
+           RETURNING id, first_name`,
+          [caller_id]
+        );
+        contact = insert.rows[0];
+        console.log('Created new contact for phone:', caller_id);
+      } else {
+        contact = findContact.rows[0];
+        console.log('Found existing contact:', contact);
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    // 4. Build your dynamic variables
+    //   - These can be anything you’ve defined in your ElevenLabs agent
+    //   - For example, "contactName" or "recentPurchase"
+    const dynamicVariables = {
+      contactName: contact.first_name || 'Caller',
+      membershipLevel: 'Gold', // Just an example
+      lastVisit: '2025-01-05',  // Example date
+    };
+
+    // 5. (Optional) Override conversation config
+    //   - E.g., custom voice, custom initial message, etc.
+    //   - If you don’t need overrides, omit this
+    const conversationConfigOverride = {
+      agent: {
+        prompt: {
+          prompt: 'This user is special, greet them politely!',
+        },
+        first_message: 'Welcome back! How can I assist you today?',
+        language: 'en'
+      },
+      tts: {
+        voice_id: 'your-elevenlabs-voice-id'
+      }
+    };
+
+    // 6. Respond with JSON
+    const responseBody = {
+      dynamic_variables: dynamicVariables,
+      conversation_config_override: conversationConfigOverride
+    };
+
+    console.log('Sending personalization response:', responseBody);
+    return res.status(200).json(responseBody);
+
+  } catch (error) {
+    console.error('Error in personalization webhook:', error.message);
+    // Return a fallback JSON or an error
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+After adding this endpoint:
+In ElevenLabs:
+
+Go to your agent’s “Security” tab, enable “fetch conversation initiation data for inbound Twilio calls.”
+Enter your new Replit URL + /twilio-personalization as the webhook.
+(Optional) Add a secret header (e.g. x-el-secret) that matches process.env.ELEVENLABS_SECRET in your Replit.
+Make sure your Twilio phone number is integrated with the agent.
+On Replit:
+
+In the “Secrets” panel, set ELEVENLABS_SECRET (if you’re using one).
+Deploy / run your repl.
+Copy your public URL from Ngrok or from the replit domain, e.g. https://my-repl-url.repl.co/twilio-personalization.
+Test:
+
+Call your Twilio number.
+ElevenLabs will call your /twilio-personalization route during the ring phase.
+Check logs for Personalization webhook triggered:.
+ElevenLabs starts the conversation using whatever dynamic variables you returned.
+Why This Is “Better” for Personalization
+ElevenLabs does all the work of capturing the caller phone number (caller_id) for you.
+You can easily override the AI agent’s config or pass in custom data from your DB.
+No extra <Redirect> or special TwiML query parameters are needed.
+4. Putting It All Together
+Keep your existing code: login, register, add-contact, receive-data, etc.
+Add the new route above for inbound personalization.
+Configure ElevenLabs to call that route.
+Test the inbound call → personalization flow → final data in /receive-data.
+With this approach, you’ve fully integrated Twilio, ElevenLabs, and your PostgreSQL database for a personalized AI agent running on Replit.
