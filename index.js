@@ -1163,7 +1163,7 @@ app.get('/debug/contacts/:phoneNumber', async (req, res) => {
  */
 app.post('/twilio-personalization', async (req, res) => {
   try {
-    // 1. Optional: Verify a secret header if you configured it in ElevenLabs
+    // 1. Optional: Verify ElevenLabs secret header
     const expectedSecret = process.env.ELEVENLABS_SECRET;
     const incomingSecret = req.headers['x-el-secret'];
     if (expectedSecret && expectedSecret !== incomingSecret) {
@@ -1172,102 +1172,104 @@ app.post('/twilio-personalization', async (req, res) => {
     }
 
     // 2. Extract data from ElevenLabs
-    const { caller_id, agent_id, called_number, call_sid } = req.body;
+    const { caller_id, agent_id, called_number, call_sid } = req.body || {};
     if (!caller_id || !call_sid) {
       console.error('Missing caller_id or call_sid in personalization webhook');
       return res.status(400).json({ error: 'Invalid payload' });
     }
     console.log('Personalization webhook triggered:', req.body);
 
-    // 3. Look up (or create) the contact in your DB
+    // 3. Look up the contact WITHOUT creating a new one
     const client = await pool.connect();
-    let contact;
-    let userId;
+    let existingContact;
     try {
-      await client.query('BEGIN');
-      const findContact = await client.query(
-        `SELECT id, first_name, last_name, user_id
-         FROM contacts
-         WHERE phone_number = $1
-         LIMIT 1`,
-        [caller_id]
-      );
+      const findContact = await client.query(`
+        SELECT id, first_name, last_name, user_id
+        FROM contacts
+        WHERE phone_number = $1
+        LIMIT 1
+      `, [caller_id]);
 
-      if (findContact.rows.length === 0) {
-        // Create contact if none found - assign to first user as fallback
-        const firstUserResult = await client.query('SELECT id FROM users ORDER BY id LIMIT 1');
-        userId = firstUserResult.rows.length > 0 ? firstUserResult.rows[0].id : 1;
-        
-        const insert = await client.query(
-          `INSERT INTO contacts (
-             phone_number, first_name, created_at, user_id
-           ) VALUES ($1, 'Unknown', NOW(), $2)
-           RETURNING id, first_name`,
-          [caller_id, userId]
-        );
-        contact = insert.rows[0];
-        console.log('Created new contact for phone:', caller_id);
-        
-        // Also log this new contact in call_log
-        await client.query(
-          'INSERT INTO call_log (call_sid, phone_number, status, created_at) VALUES ($1, $2, $3, NOW())',
-          [call_sid, caller_id, 'new_contact_personalization']
-        );
+      if (findContact.rows.length > 0) {
+        existingContact = findContact.rows[0];
+        console.log('Found existing contact:', existingContact);
+
+        // Optionally log to call_log
+        await client.query(`
+          INSERT INTO call_log (call_sid, phone_number, status, created_at)
+          VALUES ($1, $2, 'existing_contact_personalization', NOW())
+          ON CONFLICT (call_sid) DO NOTHING
+        `, [call_sid, caller_id]);
+
+        // 4. Build dynamic variables for known contact
+        const dynamicVariables = {
+          contactName: existingContact.first_name || 'Caller',
+          contactId: existingContact.id
+        };
+
+        // 5. Conversation config for known contact
+        const conversationConfigOverride = {
+          agent: {
+            prompt: {
+              prompt: `You are now speaking with ${existingContact.first_name}. Be welcoming and professional.`,
+            },
+            first_message: `Hello ${existingContact.first_name}! Thanks for calling. I'm the AI relationship assistant. How can I help you today?`,
+            language: 'en'
+          }
+        };
+
+        // 6. Respond with JSON for known contact
+        console.log('Sending personalization response for known caller');
+        return res.status(200).json({
+          dynamic_variables: dynamicVariables,
+          conversation_config_override: conversationConfigOverride
+        });
       } else {
-        contact = findContact.rows[0];
-        userId = contact.user_id;
-        console.log('Found existing contact:', contact);
+        // Contact not found - log the attempt
+        console.log('No contact found for caller:', caller_id);
+        await client.query(`
+          INSERT INTO call_log (call_sid, phone_number, status, created_at)
+          VALUES ($1, $2, 'unknown_caller_rejected', NOW())
+          ON CONFLICT (call_sid) DO NOTHING
+        `, [call_sid, caller_id]);
         
-        // Log the lookup in call_log
-        await client.query(
-          'INSERT INTO call_log (call_sid, phone_number, status, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (call_sid) DO NOTHING',
-          [call_sid, caller_id, 'existing_contact_personalization']
-        );
+        // Return 200 with special conversation config that ends the call
+        const unknownCallerResponse = {
+          dynamic_variables: {
+            contactName: 'Unknown Caller'
+          },
+          conversation_config_override: {
+            agent: {
+              prompt: {
+                prompt: `This is an unknown caller. You must politely inform them that they need to be added to the system first and end the call.`,
+              },
+              first_message: `I'm sorry, but I don't have a record of this phone number in our system. Please have someone add you as a contact first before calling this number. Thank you and goodbye.`,
+              language: 'en'
+            }
+          }
+        };
+        
+        console.log('Sending unknown caller response with goodbye message');
+        return res.status(200).json(unknownCallerResponse);
       }
-      await client.query('COMMIT');
     } catch (error) {
-      await client.query('ROLLBACK');
+      console.error('Database error in personalization webhook:', error.message);
       throw error;
     } finally {
       client.release();
     }
-
-    // 4. Build your dynamic variables
-    //   - These can be anything you've defined in your ElevenLabs agent
-    const dynamicVariables = {
-      contactName: contact.first_name || 'Caller',
-      contactId: contact.id
-    };
-
-    // 5. (Optional) Override conversation config
-    const conversationConfigOverride = {
-      agent: {
-        prompt: {
-          prompt: `You are now speaking with ${contact.first_name || 'a new contact'}. Be welcoming and professional.`,
-        },
-        first_message: contact.first_name ? 
-          `Hello ${contact.first_name}! Thanks for calling. I'm the AI relationship assistant. How can I help you today?` : 
-          `Hello! Thanks for calling. I'm the AI relationship assistant. May I ask who I'm speaking with?`,
-        language: 'en'
-      }
-    };
-
-    // 6. Respond with JSON
-    const responseBody = {
-      dynamic_variables: dynamicVariables,
-      conversation_config_override: conversationConfigOverride
-    };
-
-    console.log('Sending personalization response:', JSON.stringify(responseBody, null, 2));
-    return res.status(200).json(responseBody);
-
   } catch (error) {
     console.error('Error in personalization webhook:', error.message);
-    // Return a fallback JSON or an error
-    return res.status(500).json({ 
-      error: 'Internal server error',
+    // Return a 200 with a fallback config (ElevenLabs expects 200)
+    return res.status(200).json({ 
       dynamic_variables: {
         contactName: 'Caller'
+      },
+      conversation_config_override: {
+        agent: {
+          first_message: `I'm sorry, but we're experiencing technical difficulties. Please try again later.`,
+          language: 'en'
+        }
       }
     });
   }
