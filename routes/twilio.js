@@ -4,6 +4,7 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 
 // Twilio voice endpoint with Eleven Labs integration
+// Ensure this endpoint is accessible at /voice
 router.post('/voice', async (req, res) => {
   const { From, CallSid } = req.body;
   console.log('Incoming call received. CallSid:', CallSid, 'From:', From);
@@ -37,10 +38,12 @@ router.post('/voice', async (req, res) => {
     }
 
     // Redirect to Eleven Labs with caller phone number as query parameter
+    // Add webhook parameter to notify ElevenLabs where to send personalization requests
+    const ngrokUrl = global.ngrokUrl || req.protocol + '://' + req.get('host');
     const twiml = `
       <?xml version="1.0" encoding="UTF-8"?>
       <Response>
-        <Redirect method="POST">https://api.us.elevenlabs.io/twilio/inbound_call?caller=${encodeURIComponent(From)}</Redirect>
+        <Redirect method="POST">https://api.us.elevenlabs.io/twilio/inbound_call?caller=${encodeURIComponent(From)}&webhook=${encodeURIComponent(ngrokUrl + '/twilio-personalization')}</Redirect>
       </Response>
     `;
 
@@ -58,7 +61,8 @@ router.post('/voice', async (req, res) => {
 });
 
 // Personalization Webhook for ElevenLabs inbound Twilio calls
-router.post('/personalization', async (req, res) => {
+// Ensure this endpoint is accessible at /twilio-personalization
+router.post('/twilio-personalization', async (req, res) => {
   try {
     // 1. Optional: Verify a secret header if you configured it in ElevenLabs
     const expectedSecret = process.env.ELEVENLABS_SECRET;

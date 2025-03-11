@@ -58,7 +58,7 @@ connectToDatabase();
 app.use('/', authRoutes);
 app.use('/contacts', contactRoutes);
 app.use('/', messagingRoutes);
-app.use('/', twilioRoutes);
+app.use('/', twilioRoutes); // Keep the root path for twilio endpoints
 
 // Redirect to the static version of the interface
 app.get('/old-interface', (req, res) => {
@@ -167,6 +167,27 @@ setInterval(async () => {
 app.get('/ping', (req, res) => {
   console.log('Received ping from UptimeRobot at', new Date().toISOString());
   res.status(200).send('OK');
+});
+
+// Debug endpoint to show current configuration
+app.get('/debug-config', (req, res) => {
+  const baseUrl = req.protocol + '://' + req.get('host');
+  const ngrokUrl = global.ngrokUrl || baseUrl;
+  
+  res.json({
+    base_url: baseUrl,
+    ngrok_url: ngrokUrl,
+    important_endpoints: {
+      voice_endpoint: `${ngrokUrl}/voice`,
+      personalization_endpoint: `${ngrokUrl}/twilio-personalization`,
+      receive_data_endpoint: `${ngrokUrl}/receive-data`
+    },
+    environment_check: {
+      jwt_secret_configured: !!process.env.JWT_SECRET,
+      twilio_configured: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER),
+      elevenlabs_secret_configured: !!process.env.ELEVENLABS_SECRET
+    }
+  });
 });
 
 // Start server and ngrok tunnel with port fallback
