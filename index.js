@@ -1157,3 +1157,118 @@ app.get('/debug/contacts/:phoneNumber', async (req, res) => {
     res.status(500).json({ error: 'Server error', details: error.message });
   }
 });
+
+/**
+ * Personalization Webhook for ElevenLabs inbound Twilio calls
+ */
+app.post('/twilio-personalization', async (req, res) => {
+  try {
+    // 1. Optional: Verify a secret header if you configured it in ElevenLabs
+    const expectedSecret = process.env.ELEVENLABS_SECRET;
+    const incomingSecret = req.headers['x-el-secret'];
+    if (expectedSecret && expectedSecret !== incomingSecret) {
+      console.log('Invalid or missing x-el-secret in personalization webhook');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    // 2. Extract data from ElevenLabs
+    const { caller_id, agent_id, called_number, call_sid } = req.body;
+    if (!caller_id || !call_sid) {
+      console.error('Missing caller_id or call_sid in personalization webhook');
+      return res.status(400).json({ error: 'Invalid payload' });
+    }
+    console.log('Personalization webhook triggered:', req.body);
+
+    // 3. Look up (or create) the contact in your DB
+    const client = await pool.connect();
+    let contact;
+    let userId;
+    try {
+      await client.query('BEGIN');
+      const findContact = await client.query(
+        `SELECT id, first_name, last_name, user_id
+         FROM contacts
+         WHERE phone_number = $1
+         LIMIT 1`,
+        [caller_id]
+      );
+
+      if (findContact.rows.length === 0) {
+        // Create contact if none found - assign to first user as fallback
+        const firstUserResult = await client.query('SELECT id FROM users ORDER BY id LIMIT 1');
+        userId = firstUserResult.rows.length > 0 ? firstUserResult.rows[0].id : 1;
+        
+        const insert = await client.query(
+          `INSERT INTO contacts (
+             phone_number, first_name, created_at, user_id
+           ) VALUES ($1, 'Unknown', NOW(), $2)
+           RETURNING id, first_name`,
+          [caller_id, userId]
+        );
+        contact = insert.rows[0];
+        console.log('Created new contact for phone:', caller_id);
+        
+        // Also log this new contact in call_log
+        await client.query(
+          'INSERT INTO call_log (call_sid, phone_number, status, created_at) VALUES ($1, $2, $3, NOW())',
+          [call_sid, caller_id, 'new_contact_personalization']
+        );
+      } else {
+        contact = findContact.rows[0];
+        userId = contact.user_id;
+        console.log('Found existing contact:', contact);
+        
+        // Log the lookup in call_log
+        await client.query(
+          'INSERT INTO call_log (call_sid, phone_number, status, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (call_sid) DO NOTHING',
+          [call_sid, caller_id, 'existing_contact_personalization']
+        );
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    // 4. Build your dynamic variables
+    //   - These can be anything you've defined in your ElevenLabs agent
+    const dynamicVariables = {
+      contactName: contact.first_name || 'Caller',
+      contactId: contact.id
+    };
+
+    // 5. (Optional) Override conversation config
+    const conversationConfigOverride = {
+      agent: {
+        prompt: {
+          prompt: `You are now speaking with ${contact.first_name || 'a new contact'}. Be welcoming and professional.`,
+        },
+        first_message: contact.first_name ? 
+          `Hello ${contact.first_name}! Thanks for calling. I'm the AI relationship assistant. How can I help you today?` : 
+          `Hello! Thanks for calling. I'm the AI relationship assistant. May I ask who I'm speaking with?`,
+        language: 'en'
+      }
+    };
+
+    // 6. Respond with JSON
+    const responseBody = {
+      dynamic_variables: dynamicVariables,
+      conversation_config_override: conversationConfigOverride
+    };
+
+    console.log('Sending personalization response:', JSON.stringify(responseBody, null, 2));
+    return res.status(200).json(responseBody);
+
+  } catch (error) {
+    console.error('Error in personalization webhook:', error.message);
+    // Return a fallback JSON or an error
+    return res.status(500).json({ 
+      error: 'Internal server error',
+      dynamic_variables: {
+        contactName: 'Caller'
+      }
+    });
+  }
+});
