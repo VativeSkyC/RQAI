@@ -1163,7 +1163,7 @@ app.get('/debug/contacts/:phoneNumber', async (req, res) => {
  */
 app.post('/twilio-personalization', async (req, res) => {
   try {
-    // 1. Optional: Verify ElevenLabs secret header
+    // 1. Optional: Verify a secret header if you configured it in ElevenLabs
     const expectedSecret = process.env.ELEVENLABS_SECRET;
     const incomingSecret = req.headers['x-el-secret'];
     if (expectedSecret && expectedSecret !== incomingSecret) {
@@ -1194,80 +1194,78 @@ app.post('/twilio-personalization', async (req, res) => {
         existingContact = findContact.rows[0];
         console.log('Found existing contact:', existingContact);
 
-        // Optionally log to call_log
+        // Log to call_log
         await client.query(`
           INSERT INTO call_log (call_sid, phone_number, status, created_at)
-          VALUES ($1, $2, 'existing_contact_personalization', NOW())
+          VALUES ($1, $2, $3, NOW()) 
           ON CONFLICT (call_sid) DO NOTHING
-        `, [call_sid, caller_id]);
-
-        // 4. Build dynamic variables for known contact
-        const dynamicVariables = {
-          contactName: existingContact.first_name || 'Caller',
-          contactId: existingContact.id
-        };
-
-        // 5. Conversation config for known contact
-        const conversationConfigOverride = {
-          agent: {
-            prompt: {
-              prompt: `You are now speaking with ${existingContact.first_name}. Be welcoming and professional.`,
-            },
-            first_message: `Hello ${existingContact.first_name}! Thanks for calling. I'm the AI relationship assistant. How can I help you today?`,
-            language: 'en'
-          }
-        };
-
-        // 6. Respond with JSON for known contact
-        console.log('Sending personalization response for known caller');
-        return res.status(200).json({
-          dynamic_variables: dynamicVariables,
-          conversation_config_override: conversationConfigOverride
-        });
+        `, [call_sid, caller_id, 'existing_contact_personalization']);
       } else {
-        // Contact not found - log the attempt
-        console.log('No contact found for caller:', caller_id);
+        console.log('No existing contact for phone:', caller_id);
+        // Log that we do not recognize the caller
         await client.query(`
           INSERT INTO call_log (call_sid, phone_number, status, created_at)
-          VALUES ($1, $2, 'unknown_caller_rejected', NOW())
+          VALUES ($1, $2, $3, NOW()) 
           ON CONFLICT (call_sid) DO NOTHING
-        `, [call_sid, caller_id]);
-        
-        // Return 200 with special conversation config that ends the call
-        const unknownCallerResponse = {
-          dynamic_variables: {
-            contactName: 'Unknown Caller'
-          },
-          conversation_config_override: {
-            agent: {
-              prompt: {
-                prompt: `This is an unknown caller. You must politely inform them that they need to be added to the system first and end the call.`,
-              },
-              first_message: `I'm sorry, but I don't have a record of this phone number in our system. Please have someone add you as a contact first before calling this number. Thank you and goodbye.`,
-              language: 'en'
-            }
-          }
-        };
-        
-        console.log('Sending unknown caller response with goodbye message');
-        return res.status(200).json(unknownCallerResponse);
+        `, [call_sid, caller_id, 'unrecognized_caller']);
       }
-    } catch (error) {
-      console.error('Database error in personalization webhook:', error.message);
-      throw error;
     } finally {
       client.release();
     }
+
+    // 4. If contact does not exist, end gracefully (200) so Twilio doesn't error
+    if (!existingContact) {
+      console.log('Returning polite rejection for unrecognized caller:', caller_id);
+      return res.status(200).json({
+        dynamic_variables: {
+          contactName: 'Unknown Caller'
+        },
+        conversation_config_override: {
+          agent: {
+            prompt: {
+              prompt: `We have no record for this caller. Politely explain that they need to be added to our system by an existing user before they can use this service. Then end the call.`
+            },
+            first_message: `I'm sorry, I don't have a record for this phone number in our system. To use this service, please contact someone who already uses our platform and ask them to add you as a contact. Thank you for your interest, goodbye.`,
+            language: 'en'
+          }
+        }
+      });
+    }
+
+    // 5. If contact found, respond with normal dynamic variables
+    const dynamicVariables = {
+      contactName: existingContact.first_name || 'Caller',
+      contactId: existingContact.id
+    };
+
+    const conversationConfigOverride = {
+      agent: {
+        prompt: {
+          prompt: `You are speaking with ${existingContact.first_name} (ID: ${existingContact.id}). Be welcoming and professional.`
+        },
+        first_message: `Hello ${existingContact.first_name}! Thanks for calling. I'm the AI relationship assistant. How can I help you today?`,
+        language: 'en'
+      }
+    };
+
+    // 6. Return a success JSON (200)
+    console.log('Returning personalization for existing contact:', dynamicVariables);
+    return res.status(200).json({
+      dynamic_variables: dynamicVariables,
+      conversation_config_override: conversationConfigOverride
+    });
+
   } catch (error) {
     console.error('Error in personalization webhook:', error.message);
-    // Return a 200 with a fallback config (ElevenLabs expects 200)
-    return res.status(200).json({ 
-      dynamic_variables: {
-        contactName: 'Caller'
-      },
+    // Return a fallback 200 so we don't cause a Twilio "application error" 
+    return res.status(200).json({
+      dynamic_variables: { contactName: 'Error' },
       conversation_config_override: {
         agent: {
-          first_message: `I'm sorry, but we're experiencing technical difficulties. Please try again later.`,
+          prompt: {
+            prompt: `There was a system error. Apologize and end the call.`
+          },
+          first_message: 'I apologize, but we have encountered a technical issue with our system. Please try calling back later. Goodbye.',
           language: 'en'
         }
       }
