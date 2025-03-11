@@ -1,0 +1,148 @@
+Why the “Application Error” Message?
+When ElevenLabs attempts to personalize the call, it hits your /twilio-personalization endpoint. If your server does not return a 2xx status with valid JSON, ElevenLabs (and therefore Twilio) interprets this as an error. Twilio then plays the “We’re sorry…” message and ends the call.
+
+In your current code:
+
+The route automatically creates a new contact if none is found in contacts.
+You’ve said you never want to create new contacts on inbound calls.
+If you remove the auto-creation code and simply return a 4xx or 5xx error whenever the contact isn’t found, ElevenLabs will also consider that a “failure,” and you’ll still hear Twilio’s “application error” message. That’s because ElevenLabs expects a success (HTTP 200) plus a JSON body containing the dynamic_variables it uses for conversation.
+
+Two Ways to Handle First-Time Callers
+Hard-Fail with 4xx → Twilio Error Message
+
+If no contact is found, you could return res.status(404).json({ error: "No contact found" }).
+ElevenLabs sees the 404 and cannot proceed; Twilio plays the apology message.
+Allow a “No-Contact” Script → Return 200 but Force the Agent to End the Call
+
+If you do not want to create a DB entry, but also do not want Twilio to “error out,” you can still return a 200 with a minimal JSON override (e.g. “We have no record of you. Goodbye.”)
+ElevenLabs will start the call, play your message, then end normally.
+This avoids the “application error” message from Twilio but still refuses to create a contact.
+Most folks choose option #2 so that the call experience is friendlier than Twilio’s default “application error.”
+
+Updated Personalization Route (No Auto-Creation)
+Below is a modified version of your /twilio-personalization route that:
+
+Removes the auto-create block.
+Returns 200 if contact exists, but a 200 with a “Goodbye” prompt if contact does not exist.
+You can change the goodbye logic to fit your needs—maybe gather more info or route them to a different agent.
+Replace your current app.post('/twilio-personalization', ...) with this:
+
+js
+Copy
+app.post('/twilio-personalization', async (req, res) => {
+  try {
+    // 1. (Optional) Verify ElevenLabs secret header
+    const expectedSecret = process.env.ELEVENLABS_SECRET;
+    const incomingSecret = req.headers['x-el-secret'];
+    if (expectedSecret && expectedSecret !== incomingSecret) {
+      console.log('Invalid or missing x-el-secret in personalization webhook');
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    // 2. Extract data from ElevenLabs
+    const { caller_id, agent_id, called_number, call_sid } = req.body || {};
+    if (!caller_id || !call_sid) {
+      console.error('Missing caller_id or call_sid in personalization webhook');
+      return res.status(400).json({ error: 'Invalid payload' });
+    }
+    console.log('Personalization webhook triggered:', req.body);
+
+    // 3. Look up the contact WITHOUT creating a new one
+    const client = await pool.connect();
+    let existingContact;
+    try {
+      const findContact = await client.query(`
+        SELECT id, first_name, last_name, user_id
+        FROM contacts
+        WHERE phone_number = $1
+        LIMIT 1
+      `, [caller_id]);
+
+      if (findContact.rows.length > 0) {
+        existingContact = findContact.rows[0];
+        console.log('Found existing contact:', existingContact);
+
+        // Optionally log to call_log
+        await client.query(`
+          INSERT INTO call_log (call_sid, phone_number, status, created_at)
+          VALUES ($1, $2, $3, NOW()) 
+          ON CONFLICT (call_sid) DO NOTHING
+        `, [call_sid, caller_id, 'existing_contact_personalization']);
+      } else {
+        console.log('No existing contact for phone:', caller_id);
+        // Optionally log that we do not recognize the caller
+        await client.query(`
+          INSERT INTO call_log (call_sid, phone_number, status, created_at)
+          VALUES ($1, $2, $3, NOW()) 
+          ON CONFLICT (call_sid) DO NOTHING
+        `, [call_sid, caller_id, 'unrecognized_caller']);
+      }
+    } finally {
+      client.release();
+    }
+
+    // 4. If contact does not exist, end gracefully (200) so Twilio doesn’t error
+    if (!existingContact) {
+      return res.status(200).json({
+        dynamic_variables: {
+          contactName: 'Unknown Caller'
+        },
+        conversation_config_override: {
+          agent: {
+            prompt: {
+              prompt: `We have no record for this caller. Politely end the call.`
+            },
+            first_message: `Sorry, we do not have a record for this number. Goodbye.`,
+            language: 'en'
+          }
+        }
+      });
+    }
+
+    // 5. If contact found, respond with normal dynamic variables
+    const dynamicVariables = {
+      contactName: existingContact.first_name || 'Caller',
+      contactId: existingContact.id
+    };
+
+    const conversationConfigOverride = {
+      agent: {
+        prompt: {
+          prompt: `You are speaking with ${existingContact.first_name} (ID: ${existingContact.id}).`
+        },
+        first_message: `Hello ${existingContact.first_name}, thanks for calling! How can I assist you today?`,
+        language: 'en'
+      }
+    };
+
+    // 6. Return a success JSON (200)
+    console.log('Returning personalization for existing contact:', dynamicVariables);
+    return res.status(200).json({
+      dynamic_variables: dynamicVariables,
+      conversation_config_override: conversationConfigOverride
+    });
+
+  } catch (error) {
+    console.error('Error in personalization webhook:', error.message);
+    // Return a fallback 200 so we don't cause a Twilio "application error" 
+    return res.status(200).json({
+      dynamic_variables: { contactName: 'Error' },
+      conversation_config_override: {
+        agent: {
+          first_message: 'We have encountered an error. Goodbye.'
+        }
+      }
+    });
+  }
+});
+Explanation of Changes
+No new contacts: We removed any code that did INSERT INTO contacts.
+No DB commit/rollback: Now we’re just reading.
+If Not Found: We still return status(200) so that ElevenLabs doesn’t fail. The agent can say, “We have no record for you. Goodbye.” Twilio won’t play the “application error.”
+If Found: We do the normal personalization path.
+Next Steps / Double Check
+Ensure you have at least one contact in the contacts table with a matching phone_number if you want the call to succeed.
+Register a user (so that contacts.user_id can reference it).
+Add that contact via your /add-contact endpoint or directly in your DB.
+Call from that phone number → The personalization route sees the contact → Returns normal dynamic variables → The AI agent speaks successfully.
+If you try calling from an unrecognized number, you’ll get the apology prompt from your code snippet, not Twilio’s “application error.”
