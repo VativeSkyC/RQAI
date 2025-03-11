@@ -692,16 +692,16 @@ app.post('/voice', async (req, res) => {
       client.release();
     }
 
-    // Redirect to Eleven Labs
+    // Redirect to Eleven Labs with caller phone number as query parameter
     const twiml = `
       <?xml version="1.0" encoding="UTF-8"?>
       <Response>
-        <Redirect method="POST">https://api.us.elevenlabs.io/twilio/inbound_call</Redirect>
+        <Redirect method="POST">https://api.us.elevenlabs.io/twilio/inbound_call?caller=${encodeURIComponent(From)}</Redirect>
       </Response>
     `;
 
     res.type('text/xml').send(twiml);
-    console.log('Call redirected to Eleven Labs');
+    console.log('Call redirected to Eleven Labs with caller param:', From);
   } catch (error) {
     console.error('Error in voice endpoint:', error.message);
     // Fallback in case of error
