@@ -338,7 +338,7 @@
         async function fetchContacts() {
             try {
                 const token = localStorage.getItem('token');
-                const response = await fetch('/get-contacts', {
+                const response = await fetch('/contacts', {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
@@ -509,7 +509,7 @@
             const linkedinUrl = document.getElementById('linkedinUrl').value;
 
             try {
-                const response = await fetch('/add-contact', {
+                const response = await fetch('/contacts', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -554,7 +554,7 @@
             const linkedinUrl = document.getElementById('editLinkedinUrl').value;
 
             try {
-                const response = await fetch(`/update-contact/${contactId}`, {
+                const response = await fetch(`/contacts/${contactId}`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
@@ -673,7 +673,7 @@
 
             try {
                 const token = localStorage.getItem('token');
-                const response = await fetch(`/get-intake-responses/${contact.id}`, {
+                const response = await fetch(`/contacts/${contact.id}/intake`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
