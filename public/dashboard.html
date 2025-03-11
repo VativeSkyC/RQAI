@@ -320,6 +320,7 @@
         const addContactModal = document.getElementById('addContactModal');
         const editContactModal = document.getElementById('editContactModal');
         const sendSmsModal = document.getElementById('sendSmsModal');
+        const viewIntakeModal = document.getElementById('viewIntakeModal');
 
         // Display user info
         const userId = localStorage.getItem('userId');
@@ -336,6 +337,7 @@
         // Fetch and display contacts
         async function fetchContacts() {
             try {
+                const token = localStorage.getItem('token');
                 const response = await fetch('/get-contacts', {
                     headers: {
                         'Authorization': `Bearer ${token}`
@@ -629,6 +631,7 @@
         // Send Intake SMS
         async function sendIntakeSms(contactId) {
             try {
+                const token = localStorage.getItem('token');
                 const response = await fetch(`/send-intake-sms/${contactId}`, {
                     method: 'POST',
                     headers: {
@@ -656,7 +659,7 @@
         }
 
         // View Intake Modal
-        const viewIntakeModal = document.getElementById('viewIntakeModal');
+
         document.getElementById('closeViewIntakeModal').addEventListener('click', () => {
             viewIntakeModal.style.display = 'none';
         });
@@ -669,6 +672,7 @@
             viewIntakeModal.style.display = 'block';
 
             try {
+                const token = localStorage.getItem('token');
                 const response = await fetch(`/get-intake-responses/${contact.id}`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
@@ -690,7 +694,7 @@
         // Display intake responses in the modal
         function displayIntakeResponses(responses) {
             const intakeResponsesContent = document.getElementById('intakeResponsesContent');
-            
+
             if (responses.length === 0) {
                 intakeResponsesContent.innerHTML = '<div class="intake-empty">No intake responses found.</div>';
                 return;
@@ -726,15 +730,15 @@
                     if (response[section.field]) {
                         const sectionElement = document.createElement('div');
                         sectionElement.className = 'form-group';
-                        
+
                         const sectionLabel = document.createElement('label');
                         sectionLabel.textContent = section.name;
                         sectionElement.appendChild(sectionLabel);
-                        
+
                         const sectionContent = document.createElement('p');
                         sectionContent.textContent = response[section.field];
                         sectionElement.appendChild(sectionContent);
-                        
+
                         responseDiv.appendChild(sectionElement);
                     }
                 });
@@ -743,15 +747,15 @@
                 if (response.raw_transcript) {
                     const transcriptDiv = document.createElement('div');
                     transcriptDiv.className = 'form-group';
-                    
+
                     const transcriptLabel = document.createElement('label');
                     transcriptLabel.textContent = 'Raw Transcript';
                     transcriptDiv.appendChild(transcriptLabel);
-                    
+
                     const transcriptContent = document.createElement('p');
                     transcriptContent.textContent = response.raw_transcript;
                     transcriptDiv.appendChild(transcriptContent);
-                    
+
                     responseDiv.appendChild(transcriptDiv);
                 }
 
