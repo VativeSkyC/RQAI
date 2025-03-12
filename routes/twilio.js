@@ -84,6 +84,8 @@ router.post('/twilio-personalization', async (req, res) => {
     const pool = req.app.get('pool');
     const client = await pool.connect();
     let existingContact;
+    const userName = "Chase"; // Hardcoded name as specified in the requirements
+    
     try {
       const findContact = await client.query(`
         SELECT id, first_name, last_name, user_id
@@ -125,33 +127,64 @@ router.post('/twilio-personalization', async (req, res) => {
         conversation_config_override: {
           agent: {
             prompt: {
-              prompt: `We have no record for this caller. Politely explain that they need to be added to our system by an existing user before they can use this service. Then end the call.`
+              prompt: `You do not have a record of this caller. Politely inform them they must be added by ${userName} first, then end the call.`
             },
-            first_message: `I'm sorry, I don't have a record for this phone number in our system. To use this service, please contact someone who already uses our platform and ask them to add you as a contact. Thank you for your interest, goodbye.`,
+            first_message: `I'm sorry, I don't have a record for this phone number in our system. Please contact ${userName} to be added to the system. Thank you for your interest, goodbye.`,
             language: 'en'
           }
         }
       });
     }
 
-    // 5. If contact found, respond with normal dynamic variables
+    // 5. If contact found, respond with intake questionnaire instructions
     const dynamicVariables = {
       contactName: existingContact.first_name || 'Caller',
       contactId: existingContact.id
     };
 
+    // The greeting that mentions Chase and asks user to confirm readiness
+    const greeting = `Hello ${existingContact.first_name}, ${userName} asked me to learn more about your professional goals. When you're ready, let me know and we will get started.`;
+
+    // System prompt with the 4-question intake flow
+    const systemPrompt = `
+      You are an AI intake bot focusing on professional relationships for business leaders.
+      You have four questions to ask the caller, in this sequence:
+
+      1) Communication style:
+         "How would you describe your preferred communication style—do you lean toward direct and concise, or collaborative and detailed? Please elaborate."
+         Store the answer under "communication_style".
+
+      2) Professional goals:
+         "What are your top professional goals for the next year—growth, stability, or something else?"
+         Store the answer under "professional_goals".
+
+      3) Values:
+         "What values are most important to you in a professional relationship, such as trust, innovation, or accountability?"
+         Store the answer under "values".
+
+      4) Partnership expectations:
+         "What do you expect from a professional partnership—regular updates or strategic guidance?"
+         Store the answer under "partnership_expectations".
+
+      After each question, if the caller's answer is unclear, gently ask for clarification, e.g. "Can you elaborate on growth?"
+      Once all four questions are answered, say "Thank you for your time," and end the call.
+
+      Ensure to include the entire conversation in "raw_transcript" in your final callback to /receive-data. 
+      DO NOT ask any unrelated questions. Your mission is just these four questions.
+    `;
+
     const conversationConfigOverride = {
       agent: {
         prompt: {
-          prompt: `You are speaking with ${existingContact.first_name} (ID: ${existingContact.id}). Be welcoming and professional.`
+          prompt: systemPrompt
         },
-        first_message: `Hello ${existingContact.first_name}! Thanks for calling. I'm the AI relationship assistant. How can I help you today?`,
+        first_message: greeting,
         language: 'en'
       }
     };
 
     // 6. Return a success JSON (200)
-    console.log('Returning personalization for existing contact:', dynamicVariables);
+    console.log('Returning intake questionnaire for contact:', existingContact.first_name);
     return res.status(200).json({
       dynamic_variables: dynamicVariables,
       conversation_config_override: conversationConfigOverride
@@ -316,17 +349,24 @@ router.post('/receive-data', async (req, res) => {
         userId = contactResult.rows[0].user_id;
         console.log(`Found contact (ID: ${contactId}) for user (ID: ${userId})`);
 
+        // Log the received intake data fields for debugging
+        console.log('Intake data received:');
+        console.log('- Communication style:', communication_style || 'Not provided');
+        console.log('- Professional goals:', professional_goals || 'Not provided');
+        console.log('- Values:', values || 'Not provided');
+        console.log('- Partnership expectations:', partnership_expectations || 'Not provided');
+        console.log('- Raw transcript length:', raw_transcript ? raw_transcript.length : 0);
+
         // Store intake data
         await client.query(
           `INSERT INTO intake_responses (
-            contact_id, user_id, communication_style, goals, values, 
+            contact_id, user_id, communication_style, values, 
             professional_goals, partnership_expectations, raw_transcript, created_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
           [
             contactId, 
             userId, 
             communication_style || null, 
-            goals || null, 
             values || null, 
             professional_goals || null, 
             partnership_expectations || null, 
@@ -346,7 +386,7 @@ router.post('/receive-data', async (req, res) => {
         }
 
         await client.query('COMMIT');
-        console.log(`Successfully stored Eleven Labs data for contact ID ${contactId}, user ID ${userId}`);
+        console.log(`Successfully stored Eleven Labs intake data for contact ID ${contactId}, user ID ${userId}`);
         
         return res.status(200).json({ message: 'Data stored successfully' });
       } catch (error) {

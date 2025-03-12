@@ -120,8 +120,10 @@ const createTables = async (pool) => {
       console.log('Intake responses table exists, checking for required columns...');
       
       // Check for each required column and add if missing
+      // Note: Removed 'goals' from the list as it's not part of the new intake flow
+      // and added the four specific columns needed for the intake questionnaire
       const requiredColumns = [
-        'user_id', 'communication_style', 'goals', 'values', 
+        'user_id', 'communication_style', 'values', 
         'professional_goals', 'partnership_expectations', 'raw_transcript'
       ];
       
