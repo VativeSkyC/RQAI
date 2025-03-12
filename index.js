@@ -30,10 +30,10 @@ const initializeDatabase = () => {
   try {
     // Initialize connection manager with connection string
     const pool = connectionManager.initialize(process.env.DATABASE_URL);
-    
+
     // Make pool available to route handlers
     app.set('pool', pool);
-    
+
     // Try to connect and create tables
     connectionManager.getClient()
       .then(async (client) => {
@@ -170,7 +170,7 @@ setInterval(async () => {
 // Enhanced healthcheck endpoint for uptime monitoring
 app.get('/ping', async (req, res) => {
   console.log('Received ping from UptimeRobot at', new Date().toISOString());
-  
+
   // Check database connection as part of health check
   try {
     const pool = req.app.get('pool');
@@ -181,7 +181,7 @@ app.get('/ping', async (req, res) => {
         server: 'running'
       });
     }
-    
+
     // Try a simple query to verify db connection
     const client = await pool.connect();
     try {
@@ -209,7 +209,7 @@ app.get('/ping', async (req, res) => {
 app.get('/debug-config', (req, res) => {
   const baseUrl = req.protocol + '://' + req.get('host');
   const ngrokUrl = global.ngrokUrl || baseUrl;
-  
+
   res.json({
     base_url: baseUrl,
     ngrok_url: ngrokUrl,
@@ -355,3 +355,15 @@ server.on('error', (error) => {
 
 // Start the server with the primary port
 startServer(PORT);
+
+// Setup error handling
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).send('Something broke!');
+});
+
+// Keep database connection alive with a ping every 30 seconds
+setInterval(() => {
+  console.log('Keeping alive...');
+  connectionManager.keepAlive();
+}, 30000);

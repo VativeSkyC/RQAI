@@ -102,6 +102,22 @@ class ConnectionManager {
     return this.pool;
   }
 
+  async keepAlive() {
+    try {
+      if (!this.pool) {
+        console.error('No pool available for keep-alive ping');
+        return false;
+      }
+      
+      await this.query('SELECT 1');
+      console.log('Keep-alive successful - Server pinged');
+      return true;
+    } catch (error) {
+      console.error('Keep-alive ping failed:', error.message);
+      return false;
+    }
+  }
+
   async getClient() {
     if (!this.pool) {
       throw new Error('Connection pool not initialized');
@@ -127,7 +143,7 @@ class ConnectionManager {
       }
 
       // Use retry-as-promised for robust query execution
-      return await this.retry(async () => {
+      return await retry(async () => {
         try {
           const client = await this.pool.connect();
           try {
