@@ -252,23 +252,34 @@ router.post('/receive-data', async (req, res) => {
       raw_transcript 
     } = req.body;
 
-    console.log('Processing Eleven Labs data:', 
-      callSid ? `callSid: ${callSid}` : `caller: ${caller}`);
-    console.log('Request body:', JSON.stringify(req.body, null, 2));
+    console.log('=== PROCESSING ELEVENLABS CALLBACK DATA ===');
+    console.log('Identifier:', callSid ? `CallSID: ${callSid}` : `Caller: ${caller}`);
+    console.log('Complete request body:', JSON.stringify(req.body, null, 2));
+    
+    // Detailed logging of key fields
+    console.log('=== INTAKE FIELDS RECEIVED ===');
+    console.log('- communication_style:', typeof communication_style, communication_style || 'NULL');
+    console.log('- professional_goals:', typeof professional_goals, professional_goals || 'NULL');
+    console.log('- values:', typeof values, values || 'NULL');
+    console.log('- partnership_expectations:', typeof partnership_expectations, partnership_expectations || 'NULL');
+    console.log('- raw_transcript:', raw_transcript ? `${raw_transcript.substring(0, 100)}... (${raw_transcript.length} chars)` : 'NULL');
     
     try {
       const pool = req.app.get('pool');
       const client = await pool.connect();
       
       try {
+        console.log('Starting database transaction (BEGIN)');
         await client.query('BEGIN');
         
         let phoneNumber = null;
         
         // If we have a caller phone number directly, use it
         if (caller) {
-          phoneNumber = caller;
-          console.log(`Using direct caller phone number: ${phoneNumber}`);
+          // Normalize phone number by removing all non-numeric characters except leading +
+          const normalizedCaller = caller.replace(/^(\+)/, 'PLUS').replace(/[^0-9]/g, '').replace('PLUS', '+');
+          phoneNumber = normalizedCaller;
+          console.log(`Using direct caller phone number: Original=${caller}, Normalized=${phoneNumber}`);
           
           // Create a record in call_log for reference
           await client.query(
@@ -299,8 +310,9 @@ router.post('/receive-data', async (req, res) => {
               if (callResult.rows.length === 0) {
                 // If we receive a phone_number in the payload, use that
                 if (req.body.phone_number) {
-                  console.log(`Using phone_number from payload: ${req.body.phone_number}`);
-                  phoneNumber = req.body.phone_number;
+                  const normalizedPhone = req.body.phone_number.replace(/^(\+)/, 'PLUS').replace(/[^0-9]/g, '').replace('PLUS', '+');
+                  console.log(`Using phone_number from payload: Original=${req.body.phone_number}, Normalized=${normalizedPhone}`);
+                  phoneNumber = normalizedPhone;
                   
                   // Create a record in call_log for this session
                   await client.query(
@@ -309,6 +321,7 @@ router.post('/receive-data', async (req, res) => {
                   );
                 } else {
                   console.error(`ERROR: Could not find call record for SID: ${callSid}`);
+                  console.log('Performing ROLLBACK due to missing phone number');
                   await client.query('ROLLBACK');
                   return res.status(404).json({ 
                     error: 'Call not found',
@@ -328,6 +341,7 @@ router.post('/receive-data', async (req, res) => {
             console.log(`Found phone number ${phoneNumber} for callSid: ${callSid}`);
           }
         } else {
+          console.log('Performing ROLLBACK due to missing caller information');
           await client.query('ROLLBACK');
           return res.status(400).json({ 
             error: 'Missing caller information',
@@ -335,34 +349,67 @@ router.post('/receive-data', async (req, res) => {
           });
         }
 
-        // Find the corresponding contact
-        const contactResult = await client.query('SELECT id, user_id FROM contacts WHERE phone_number = $1', [phoneNumber]);
+        // Normalize phone number for lookup
+        const normalizedPhone = phoneNumber.replace(/^(\+)/, 'PLUS').replace(/[^0-9]/g, '').replace('PLUS', '+');
+        
+        // Try to find contact with exact match first
+        console.log(`Looking for contact with exact phone number: ${normalizedPhone}`);
+        let contactResult = await client.query('SELECT id, user_id FROM contacts WHERE phone_number = $1', [normalizedPhone]);
+        
+        // If not found with exact match, try with just the digits (removing +)
+        if (contactResult.rows.length === 0) {
+          const digitsOnly = normalizedPhone.replace(/^\+/, '');
+          console.log(`Contact not found with exact match, trying with digits only: ${digitsOnly}`);
+          
+          // Try to match with or without country code
+          contactResult = await client.query(
+            'SELECT id, user_id FROM contacts WHERE ' +
+            'phone_number = $1 OR ' +
+            'phone_number = $2 OR ' +
+            'phone_number LIKE $3 OR ' +
+            'REPLACE(REPLACE(phone_number, \'+\', \'\'), \'-\', \'\') = $4',
+            [
+              digitsOnly,                      // Without +
+              '+' + digitsOnly,                // With +
+              '%' + digitsOnly.slice(-10) + '%', // Last 10 digits with wildcards
+              digitsOnly.replace(/[^0-9]/g, '') // All non-numeric chars removed
+            ]
+          );
+        }
 
         if (contactResult.rows.length === 0) {
-          console.error('Contact not found for phone number:', phoneNumber);
-          console.log('Will return error to Eleven Labs. Contact needs to be created manually.');
+          console.error('ERROR: Contact not found for phone number:', normalizedPhone);
+          console.log('Performing ROLLBACK since no matching contact was found');
           await client.query('ROLLBACK');
-          return res.status(404).json({ error: 'Contact not found for phone number: ' + phoneNumber });
+          return res.status(404).json({ 
+            error: 'Contact not found', 
+            message: 'No contact found for phone number: ' + normalizedPhone,
+            normalized_phone: normalizedPhone
+          });
         }
 
         const contactId = contactResult.rows[0].id;
         userId = contactResult.rows[0].user_id;
-        console.log(`Found contact (ID: ${contactId}) for user (ID: ${userId})`);
+        console.log(`SUCCESS: Found contact (ID: ${contactId}) for user (ID: ${userId})`);
 
-        // Log the received intake data fields for debugging
-        console.log('Intake data received:');
-        console.log('- Communication style:', communication_style || 'Not provided');
-        console.log('- Professional goals:', professional_goals || 'Not provided');
-        console.log('- Values:', values || 'Not provided');
-        console.log('- Partnership expectations:', partnership_expectations || 'Not provided');
-        console.log('- Raw transcript length:', raw_transcript ? raw_transcript.length : 0);
+        // Prepare and log the data we're going to insert
+        console.log('=== INSERTING INTO INTAKE_RESPONSES ===');
+        console.log('- contact_id:', contactId);
+        console.log('- user_id:', userId);
+        console.log('- communication_style:', communication_style || 'NULL');
+        console.log('- values:', values || 'NULL');
+        console.log('- professional_goals:', professional_goals || 'NULL');
+        console.log('- partnership_expectations:', partnership_expectations || 'NULL');
+        console.log('- raw_transcript length:', raw_transcript ? raw_transcript.length : 0);
 
-        // Store intake data
-        await client.query(
+        // Store intake data with proper transaction and clear logging
+        console.log('Executing INSERT query...');
+        const insertResult = await client.query(
           `INSERT INTO intake_responses (
             contact_id, user_id, communication_style, values, 
             professional_goals, partnership_expectations, raw_transcript, created_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+          RETURNING id`,
           [
             contactId, 
             userId, 
@@ -373,31 +420,48 @@ router.post('/receive-data', async (req, res) => {
             raw_transcript || null
           ]
         );
+        
+        console.log(`INSERT successful. New intake_responses row ID: ${insertResult.rows[0]?.id || 'unknown'}`);
 
         // Update call_log to mark as processed if we have a callSid
         if (callSid) {
+          console.log(`Updating call_log status for SID: ${callSid}`);
           await client.query(
             'UPDATE call_log SET status = $1, processed_at = NOW() WHERE call_sid = $2',
             ['processed', callSid]
           );
 
           // Clean up temp_calls (if it exists there)
+          console.log(`Cleaning up temp_calls for SID: ${callSid}`);
           await client.query('DELETE FROM temp_calls WHERE call_sid = $1', [callSid]);
         }
 
+        console.log('Committing transaction (COMMIT)');
         await client.query('COMMIT');
         console.log(`Successfully stored Eleven Labs intake data for contact ID ${contactId}, user ID ${userId}`);
         
-        return res.status(200).json({ message: 'Data stored successfully' });
+        return res.status(200).json({ 
+          message: 'Data stored successfully',
+          contact_id: contactId,
+          intake_id: insertResult.rows[0]?.id
+        });
       } catch (error) {
+        console.error('ERROR in database operations:', error.message);
+        console.log('Performing ROLLBACK due to error');
         await client.query('ROLLBACK');
         throw error; // Pass to outer catch
       } finally {
         client.release();
+        console.log('Database client released');
       }
     } catch (error) {
-      console.error('Error processing Eleven Labs data:', error.message);
-      return res.status(500).json({ error: 'Failed to store data', details: error.message });
+      console.error('CRITICAL ERROR processing Eleven Labs data:', error.message);
+      console.error(error.stack);
+      return res.status(500).json({ 
+        error: 'Failed to store data', 
+        details: error.message,
+        stack: error.stack
+      });
     }
   } 
   // Handle standard API request with JWT auth
