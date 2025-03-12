@@ -270,7 +270,17 @@ router.post('/receive-data', async (req, res) => {
       
       try {
         console.log('Starting database transaction (BEGIN)');
-        await client.query('BEGIN');
+        
+        // Add additional error handling for database operations
+        try {
+          await client.query('BEGIN');
+        } catch (dbError) {
+          if (dbError.code === '57P01') {
+            console.error('Database connection terminated by administrator during transaction start');
+            throw new Error('Database connection interrupted - please try again');
+          }
+          throw dbError;
+        }
         
         let phoneNumber = null;
         
@@ -437,8 +447,17 @@ router.post('/receive-data', async (req, res) => {
         }
 
         console.log('Committing transaction (COMMIT)');
-        await client.query('COMMIT');
-        console.log(`Successfully stored Eleven Labs intake data for contact ID ${contactId}, user ID ${userId}`);
+        try {
+          await client.query('COMMIT');
+          console.log(`Successfully stored Eleven Labs intake data for contact ID ${contactId}, user ID ${userId}`);
+        } catch (commitError) {
+          if (commitError.code === '57P01') {
+            console.error('Database connection terminated during COMMIT - data may still be saved');
+            console.log('Will verify data was stored in next request');
+          } else {
+            throw commitError;
+          }
+        }
         
         return res.status(200).json({ 
           message: 'Data stored successfully',

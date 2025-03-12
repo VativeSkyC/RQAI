@@ -22,37 +22,41 @@ app.use(bodyParser.json());
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
-// PostgreSQL Connection
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: 10,
-  idleTimeoutMillis: 30000,
-});
+// Import connection manager
+const connectionManager = require('./services/connectionManager');
 
-// Make pool available to route handlers
-app.set('pool', pool);
-
-// Database connection with retry
-const connectToDatabase = () => {
-  pool.connect()
-    .then(() => {
-      console.log('Connected to PostgreSQL');
-      return dbService.createTables(pool);
-    })
-    .catch((error) => {
-      console.error('PostgreSQL connection error:', error.message);
-      console.log('Retrying in 5 seconds...');
-      setTimeout(connectToDatabase, 5000);
-    });
+// Initialize database connection
+const initializeDatabase = () => {
+  try {
+    // Initialize connection manager with connection string
+    const pool = connectionManager.initialize(process.env.DATABASE_URL);
+    
+    // Make pool available to route handlers
+    app.set('pool', pool);
+    
+    // Try to connect and create tables
+    connectionManager.getClient()
+      .then(async (client) => {
+        try {
+          console.log('Connected to PostgreSQL');
+          await dbService.createTables(pool);
+        } finally {
+          client.release();
+        }
+      })
+      .catch((error) => {
+        console.error('Initial PostgreSQL connection error:', error.message);
+        console.log('Retrying in 5 seconds...');
+        setTimeout(initializeDatabase, 5000);
+      });
+  } catch (error) {
+    console.error('Error initializing database connection:', error.message);
+    console.log('Retrying in 5 seconds...');
+    setTimeout(initializeDatabase, 5000);
+  }
 };
 
-// Handle pool errors
-pool.on('error', (err) => {
-  console.error('Unexpected error on idle client:', err);
-  connectToDatabase();
-});
-
-connectToDatabase();
+initializeDatabase();
 
 // Register route modules
 app.use('/', authRoutes);
