@@ -1,0 +1,242 @@
+Below is a **step-by-step** plan for your Replit-based AI Agent, showing **exactly** how to greet the caller by name, reference “Chase,” ask **four** sequential questions, then store each answer in the `intake_responses` table under the corresponding columns (`communication_style`, `professional_goals`, `values`, `partnership_expectations`), plus a `raw_transcript` capturing everything.
+
+---
+
+## 1. High-Level Flow
+
+1. **Caller dials** the Twilio number.  
+2. **ElevenLabs** personalizes the conversation by calling your `/twilio-personalization` endpoint.  
+3. That route returns the **system prompt** and **first message** telling the AI agent to ask these four questions in order.  
+4. **Caller** answers each question verbally; the AI may clarify if needed.  
+5. **Call finishes**. ElevenLabs sends a **POST** to your `/receive-data` endpoint with the user’s answers.  
+6. Your code **inserts** each field into `communication_style`, `professional_goals`, `values`, `partnership_expectations`, and also logs the entire conversation as `raw_transcript`.
+
+You already have the scaffolding for personalization (`/twilio-personalization`) and data reception (`/receive-data`). We’ll customize them for your four questions.
+
+---
+
+## 2. Personalization Webhook (/twilio-personalization)
+
+In **index.js** (or wherever your route is defined), replace your existing route code with something like:
+
+```js
+app.post('/twilio-personalization', async (req, res) => {
+  try {
+    const { caller_id, call_sid } = req.body || {};
+    if (!caller_id || !call_sid) {
+      console.log('Missing caller info or call SID');
+      return res.status(400).json({ error: 'Invalid payload' });
+    }
+
+    console.log('Personalization webhook triggered with:', req.body);
+
+    // Look up contact in your DB
+    const client = await pool.connect();
+    let contact = null;
+    let userName = 'Chase'; // Hardcode or dynamically look up "Chase" if needed
+    try {
+      const contactResult = await client.query(
+        `SELECT id, first_name, user_id
+         FROM contacts 
+         WHERE phone_number = $1
+         LIMIT 1`,
+        [caller_id]
+      );
+      if (contactResult.rows.length > 0) {
+        contact = contactResult.rows[0];
+        // Log call
+        await client.query(`
+          INSERT INTO call_log (call_sid, phone_number, status, created_at)
+          VALUES ($1, $2, $3, NOW()) 
+          ON CONFLICT (call_sid) DO NOTHING
+        `, [call_sid, caller_id, 'existing_contact']);
+      } else {
+        // Unrecognized caller
+        await client.query(`
+          INSERT INTO call_log (call_sid, phone_number, status, created_at)
+          VALUES ($1, $2, $3, NOW()) 
+          ON CONFLICT (call_sid) DO NOTHING
+        `, [call_sid, caller_id, 'unrecognized_caller']);
+      }
+    } finally {
+      client.release();
+    }
+
+    // If no contact found, politely end
+    if (!contact) {
+      return res.status(200).json({
+        dynamic_variables: {},
+        conversation_config_override: {
+          agent: {
+            prompt: {
+              prompt: `You do not have a record of this caller. Politely inform them they must be added by ${userName} first, then end the call.`
+            },
+            first_message: `Sorry, we have no record for this phone number. Please contact ${userName} to be added to the system. Goodbye.`,
+            language: 'en'
+          }
+        }
+      });
+    }
+
+    // =============== AGENT INSTRUCTIONS ===============
+    // We greet the user by name, mention "Chase," and ask the user to confirm readiness.
+    // Then proceed with the four questions, collecting each answer.
+    // We'll store answers into communication_style, professional_goals, values, partnership_expectations
+    // plus a raw transcript for everything.
+
+    const greeting = `Hello ${contact.first_name}, ${userName} asked me to learn more about your professional goals. When you're ready, let me know and we will get started.`;
+
+    // The system prompt (the “prompt” object) dictates the entire Q&A flow:
+    const systemPrompt = `
+      You are an AI intake bot focusing on professional relationships for business leaders.
+      You have four questions to ask the caller, in this sequence:
+
+      1) Communication style:
+         "How would you describe your preferred communication style—do you lean toward direct and concise, or collaborative and detailed? Please elaborate."
+         Store the answer under "communication_style".
+
+      2) Professional goals:
+         "What are your top professional goals for the next year—growth, stability, or something else?"
+         Store the answer under "professional_goals".
+
+      3) Values:
+         "What values are most important to you in a professional relationship, such as trust, innovation, or accountability?"
+         Store the answer under "values".
+
+      4) Partnership expectations:
+         "What do you expect from a professional partnership—regular updates or strategic guidance?"
+         Store the answer under "partnership_expectations".
+
+      After each question, if the caller’s answer is unclear, gently ask for clarification, e.g. "Can you elaborate on growth?"
+      Once all four questions are answered, say "Thank you for your time," and end the call.
+
+      Ensure to include the entire conversation in "raw_transcript" in your final callback to /receive-data. 
+      DO NOT ask any unrelated questions. Your mission is just these four questions.
+    `;
+
+    // The first_message is what the caller hears immediately after picking up:
+    const firstMessage = greeting;
+
+    // Construct the conversation override
+    const conversationConfigOverride = {
+      agent: {
+        prompt: { prompt: systemPrompt },
+        first_message: firstMessage,
+        language: 'en'
+      },
+      // If you want a custom ElevenLabs voice:
+      // tts: { voice_id: 'YOUR_VOICE_ID' }
+    };
+
+    return res.status(200).json({
+      dynamic_variables: {},
+      conversation_config_override: conversationConfigOverride
+    });
+
+  } catch (err) {
+    console.error('Error in personalization webhook:', err);
+    return res.status(200).json({
+      conversation_config_override: {
+        agent: {
+          first_message: 'An error occurred. Please try again later. Goodbye.'
+        }
+      }
+    });
+  }
+});
+```
+
+### Key Points
+
+- We greet the user: `“Hello [first_name], Chase asked me to ...”`  
+- The **systemPrompt** instructs the AI to **ask the 4 questions** in order.  
+- Tells the AI to store answers in `communication_style`, `professional_goals`, `values`, `partnership_expectations`, and also to fill `raw_transcript`.  
+- We keep it short and direct so the AI doesn’t deviate.
+
+---
+
+## 3. Capture Answers in `/receive-data`
+
+In your **existing** `app.post('/receive-data', ...)` route, you likely have code that reads:
+
+```js
+if (isElevenLabsCallback) {
+  const {
+    callSid,
+    caller,
+    communication_style,
+    professional_goals,
+    values,
+    partnership_expectations,
+    raw_transcript
+  } = req.body;
+
+  // ...
+  // Find the contact by phoneNumber
+  // Insert or update intake_responses
+}
+```
+
+### Example Insert
+
+Inside your transaction, you might do:
+
+```js
+await client.query(`
+  INSERT INTO intake_responses (
+    contact_id, 
+    user_id, 
+    communication_style, 
+    professional_goals, 
+    values,
+    partnership_expectations,
+    raw_transcript,
+    created_at
+  ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+`, [
+  contactId, 
+  userId,
+  communication_style || null,
+  professional_goals || null,
+  values || null,
+  partnership_expectations || null,
+  raw_transcript || null
+]);
+```
+
+As always, watch your logs to ensure that `req.body.communication_style`, etc., actually **arrive** from ElevenLabs. If not, double-check your agent prompt in the personalization step to ensure you instruct the AI to assign user answers to these fields.  
+*(You might see them in `raw_transcript` only, especially if the AI never sets them. In that case, parse them from the transcript or refine the prompt with “Place the user’s final answer in `communication_style`,” etc.)*
+
+---
+
+## 4. Summary of Implementation Steps
+
+1. **Add** or **update** the personalization route (`/twilio-personalization`) to greet the user by name, mention “Chase,” and define a system prompt that enumerates the four questions.  
+2. **Ensure** your system prompt instructs the AI to store the user’s answers in the correct fields:  
+   - `communication_style`  
+   - `professional_goals`  
+   - `values`  
+   - `partnership_expectations`  
+   - And the entire conversation goes into `raw_transcript`.  
+3. **In** your `/receive-data` route, **handle** `communication_style`, `professional_goals`, `values`, and `partnership_expectations` from the callback, plus `raw_transcript`. Insert them into your `intake_responses` table.  
+4. **Test** by calling from a phone that’s recognized in your `contacts` table. The agent will greet by name, mention Chase, ask four questions, end the call, then your Replit logs (and DB) should show the captured data.
+
+---
+
+## 5. Debug / Verification
+
+- **Replit Logs**:  
+  - When a call arrives, check logs for “Personalization webhook triggered with: …” and see your final JSON response.  
+  - On call finish, watch `/receive-data` logs. Confirm the body includes your fields.  
+
+- **Check DB**:  
+  - In `intake_responses`, you should see `communication_style`, `professional_goals`, `values`, `partnership_expectations`, and `raw_transcript` with the user’s answers.  
+
+- **If Fields Are Empty**:  
+  - Often the AI needs more explicit instructions. For example:  
+    “**After** each question is answered, set `communication_style` to the user’s response” (for the first question), etc.  
+  - Ensure your system prompt is explicit about how to populate these fields.  
+
+Once it’s working, you’ll have a 4-question “intake” call that references “Chase,” greets by name, and stores each answer plus a full transcript in your database. From there, you can expand to more logic, or chain further questions. 
+
+That’s all—happy building!
