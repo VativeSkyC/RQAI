@@ -167,10 +167,42 @@ setInterval(async () => {
   await dbService.cleanupTempCalls(pool);
 }, 60 * 60 * 1000); // Every 60 minutes
 
-// Ping endpoint for uptime monitoring
-app.get('/ping', (req, res) => {
+// Enhanced healthcheck endpoint for uptime monitoring
+app.get('/ping', async (req, res) => {
   console.log('Received ping from UptimeRobot at', new Date().toISOString());
-  res.status(200).send('OK');
+  
+  // Check database connection as part of health check
+  try {
+    const pool = req.app.get('pool');
+    if (!pool) {
+      return res.status(503).json({
+        status: 'degraded',
+        database: 'not connected',
+        server: 'running'
+      });
+    }
+    
+    // Try a simple query to verify db connection
+    const client = await pool.connect();
+    try {
+      await client.query('SELECT 1 as connection_test');
+      return res.status(200).json({
+        status: 'ok',
+        database: 'connected',
+        server: 'running'
+      });
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('Health check failed:', err.message);
+    return res.status(503).json({
+      status: 'degraded',
+      database: 'error',
+      server: 'running',
+      error: err.message
+    });
+  }
 });
 
 // Debug endpoint to show current configuration

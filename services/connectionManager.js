@@ -13,6 +13,14 @@ class ConnectionManager {
   initialize(connectionString) {
     this.connectionString = connectionString;
     
+    // Process the connection string to use Neon's connection pooler
+    // This can help with stability in Replit environment
+    this.poolerConnectionString = connectionString;
+    if (connectionString && connectionString.includes('.us-east-2')) {
+      this.poolerConnectionString = connectionString.replace('.us-east-2', '-pooler.us-east-2');
+      console.log('Using connection pooler for improved stability');
+    }
+    
     if (!this.pool) {
       this.createPool();
       
@@ -32,9 +40,9 @@ class ConnectionManager {
   
   createPool() {
     this.pool = new Pool({
-      connectionString: this.connectionString,
-      max: 5, // Reduced from 10 to decrease connection pressure
-      idleTimeoutMillis: 30000,
+      connectionString: this.poolerConnectionString,
+      max: 3, // Reduced to 3 to decrease connection pressure on Replit
+      idleTimeoutMillis: 10000, // Reduced idle timeout
       connectionTimeoutMillis: 5000,
       // Add exponential backoff on connection failures
       retryDelay: this.calculateBackoff.bind(this),
@@ -73,8 +81,17 @@ class ConnectionManager {
       console.log(`Waiting ${delay}ms before reconnecting...`);
       
       setTimeout(() => {
-        this.createPool();
-        console.log('Database pool recreated after interruption');
+        try {
+          this.createPool();
+          console.log('Database pool recreated after interruption');
+          
+          // Test the connection immediately
+          this.pool.query('SELECT 1')
+            .then(() => console.log('✅ Connection test successful'))
+            .catch(err => console.error('❌ Connection test failed:', err.message));
+        } catch (err) {
+          console.error('Error recreating pool:', err.message);
+        }
       }, delay);
     } catch (error) {
       console.error('Error during reconnection:', error.message);

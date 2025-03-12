@@ -212,6 +212,10 @@ router.post('/twilio-personalization', async (req, res) => {
 router.post('/receive-data', async (req, res) => {
   console.log('Received request to /receive-data from Eleven Labs');
   console.log('Request body:', JSON.stringify(req.body, null, 2));
+  
+  // Add idempotency key if not present to allow for safe retries
+  const idempotencyKey = req.body.idempotencyKey || `elevenlabs-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+  console.log(`Processing with idempotency key: ${idempotencyKey}`);
 
   // Handle both authentication methods: direct user requests with JWT and Eleven Labs callbacks
   let isElevenLabsCallback = false;
