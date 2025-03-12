@@ -1,0 +1,253 @@
+NGROK LOG: t=2025-03-12T20:10:59+0000 lvl=info msg="join connections" obj=join id=3b5fa924dd91 l=127.0.0.1:5000 r=34.67.146.145:1204
+Personalization webhook triggered: {
+  caller_id: '+15132017748',
+  agent_id: '2p88oZd50AEryCjzugGe',
+  called_number: '+15139517691',
+  call_sid: 'CA9511ca9c78671fb5209df3bd8d1b396b'
+}
+Found existing contact: { id: 3, first_name: 'Testing', last_name: 'Roberts', user_id: 2 }
+Returning intake questionnaire for contact: Testing
+Keeping alive...
+Keep-alive successful - Server pinged
+Keeping alive...
+Keep-alive successful - Server pinged
+Keeping alive...
+Keep-alive successful - Server pinged
+Keeping alive...
+Keep-alive successful - Server pinged
+Uncaught Exception: error: terminating connection due to administrator command
+    at Parser.parseErrorMessage (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:283:98)
+    at Parser.handlePacket (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:122:29)
+    at Parser.parse (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:35:38)
+    at TLSSocket.<anonymous> (/home/runner/workspace/node_modules/pg-protocol/dist/index.js:11:42)
+    at TLSSocket.emit (node:events:518:28)
+    at addChunk (node:internal/streams/readable:561:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    at Readable.push (node:internal/streams/readable:392:5)
+    at TLSWrap.onStreamRead (node:internal/stream_base_commons:191:23) {
+  length: 116,
+  severity: 'FATAL',
+  code: '57P01',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'postgres.c',
+  line: '3289',
+  routine: 'ProcessInterrupts'
+}
+Server will continue running if possible
+Uncaught Exception: error: terminating connection due to administrator command
+    at Parser.parseErrorMessage (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:283:98)
+    at Parser.handlePacket (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:122:29)
+    at Parser.parse (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:35:38)
+    at TLSSocket.<anonymous> (/home/runner/workspace/node_modules/pg-protocol/dist/index.js:11:42)
+    at TLSSocket.emit (node:events:518:28)
+    at addChunk (node:internal/streams/readable:561:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    at Readable.push (node:internal/streams/readable:392:5)
+    at TLSWrap.onStreamRead (node:internal/stream_base_commons:191:23) {
+  length: 116,
+  severity: 'FATAL',
+  code: '57P01',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'postgres.c',
+  line: '3289',
+  routine: 'ProcessInterrupts'
+}
+Server will continue running if possible
+Uncaught Exception: Error: Connection terminated unexpectedly
+    at Connection.<anonymous> (/home/runner/workspace/node_modules/pg/lib/client.js:131:73)
+    at Object.onceWrapper (node:events:632:28)
+    at Connection.emit (node:events:518:28)
+    at Socket.<anonymous> (/home/runner/workspace/node_modules/pg/lib/connection.js:62:12)
+    at Socket.emit (node:events:530:35)
+    at TCP.<anonymous> (node:net:343:12)
+Server will continue running if possible
+Uncaught Exception: error: terminating connection due to administrator command
+    at Parser.parseErrorMessage (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:283:98)
+    at Parser.handlePacket (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:122:29)
+    at Parser.parse (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:35:38)
+    at TLSSocket.<anonymous> (/home/runner/workspace/node_modules/pg-protocol/dist/index.js:11:42)
+    at TLSSocket.emit (node:events:518:28)
+    at addChunk (node:internal/streams/readable:561:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    at Readable.push (node:internal/streams/readable:392:5)
+    at TLSWrap.onStreamRead (node:internal/stream_base_commons:191:23) {
+  length: 116,
+  severity: 'FATAL',
+  code: '57P01',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'postgres.c',
+  line: '3289',
+  routine: 'ProcessInterrupts'
+}
+Server will continue running if possible
+Uncaught Exception: error: terminating connection due to administrator command
+    at Parser.parseErrorMessage (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:283:98)
+    at Parser.handlePacket (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:122:29)
+    at Parser.parse (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:35:38)
+    at TLSSocket.<anonymous> (/home/runner/workspace/node_modules/pg-protocol/dist/index.js:11:42)
+    at TLSSocket.emit (node:events:518:28)
+    at addChunk (node:internal/streams/readable:561:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    at Readable.push (node:internal/streams/readable:392:5)
+    at TLSWrap.onStreamRead (node:internal/stream_base_commons:191:23) {
+  length: 116,
+  severity: 'FATAL',
+  code: '57P01',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'postgres.c',
+  line: '3289',
+  routine: 'ProcessInterrupts'
+}
+Server will continue running if possible
+Uncaught Exception: Error: Connection terminated unexpectedly
+    at Connection.<anonymous> (/home/runner/workspace/node_modules/pg/lib/client.js:131:73)
+    at Object.onceWrapper (node:events:632:28)
+    at Connection.emit (node:events:518:28)
+    at Socket.<anonymous> (/home/runner/workspace/node_modules/pg/lib/connection.js:62:12)
+    at Socket.emit (node:events:530:35)
+    at TCP.<anonymous> (node:net:343:12)
+Server will continue running if possible
+Uncaught Exception: Error: Connection terminated unexpectedly
+    at Connection.<anonymous> (/home/runner/workspace/node_modules/pg/lib/client.js:131:73)
+    at Object.onceWrapper (node:events:632:28)
+    at Connection.emit (node:events:518:28)
+    at Socket.<anonymous> (/home/runner/workspace/node_modules/pg/lib/connection.js:62:12)
+    at Socket.emit (node:events:530:35)
+    at TCP.<anonymous> (node:net:343:12)
+Server will continue running if possible
+Uncaught Exception: Error: Connection terminated unexpectedly
+    at Connection.<anonymous> (/home/runner/workspace/node_modules/pg/lib/client.js:131:73)
+    at Object.onceWrapper (node:events:632:28)
+    at Connection.emit (node:events:518:28)
+    at Socket.<anonymous> (/home/runner/workspace/node_modules/pg/lib/connection.js:62:12)
+    at Socket.emit (node:events:530:35)
+    at TCP.<anonymous> (node:net:343:12)
+Server will continue running if possible
+Uncaught Exception: error: terminating connection due to administrator command
+    at Parser.parseErrorMessage (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:283:98)
+    at Parser.handlePacket (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:122:29)
+    at Parser.parse (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:35:38)
+    at TLSSocket.<anonymous> (/home/runner/workspace/node_modules/pg-protocol/dist/index.js:11:42)
+    at TLSSocket.emit (node:events:518:28)
+    at addChunk (node:internal/streams/readable:561:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    at Readable.push (node:internal/streams/readable:392:5)
+    at TLSWrap.onStreamRead (node:internal/stream_base_commons:191:23) {
+  length: 116,
+  severity: 'FATAL',
+  code: '57P01',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'postgres.c',
+  line: '3289',
+  routine: 'ProcessInterrupts'
+}
+Server will continue running if possible
+Uncaught Exception: Error: Connection terminated unexpectedly
+    at Connection.<anonymous> (/home/runner/workspace/node_modules/pg/lib/client.js:131:73)
+    at Object.onceWrapper (node:events:632:28)
+    at Connection.emit (node:events:518:28)
+    at Socket.<anonymous> (/home/runner/workspace/node_modules/pg/lib/connection.js:62:12)
+    at Socket.emit (node:events:530:35)
+    at TCP.<anonymous> (node:net:343:12)
+Server will continue running if possible
+Uncaught Exception: error: terminating connection due to administrator command
+    at Parser.parseErrorMessage (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:283:98)
+    at Parser.handlePacket (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:122:29)
+    at Parser.parse (/home/runner/workspace/node_modules/pg-protocol/dist/parser.js:35:38)
+    at TLSSocket.<anonymous> (/home/runner/workspace/node_modules/pg-protocol/dist/index.js:11:42)
+    at TLSSocket.emit (node:events:518:28)
+    at addChunk (node:internal/streams/readable:561:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    at Readable.push (node:internal/streams/readable:392:5)
+    at TLSWrap.onStreamRead (node:internal/stream_base_commons:191:23) {
+  length: 116,
+  severity: 'FATAL',
+  code: '57P01',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'postgres.c',
+  line: '3289',
+  routine: 'ProcessInterrupts'
+}
+Server will continue running if possible
+Uncaught Exception: Error: Connection terminated unexpectedly
+    at Connection.<anonymous> (/home/runner/workspace/node_modules/pg/lib/client.js:131:73)
+    at Object.onceWrapper (node:events:632:28)
+    at Connection.emit (node:events:518:28)
+    at Socket.<anonymous> (/home/runner/workspace/node_modules/pg/lib/connection.js:62:12)
+    at Socket.emit (node:events:530:35)
+    at TCP.<anonymous> (node:net:343:12)
+Server will continue running if possible
+Keeping alive...
+Keep-alive successful - Server pinged
+NGROK LOG: t=2025-03-12T20:12:58+0000 lvl=info msg="join connections" obj=join id=02ce1d6593ea l=127.0.0.1:5000 r=216.144.248.29:55542
+Received ping from UptimeRobot at 2025-03-12T20:12:58.182Z
+Keeping alive...
+Keep-alive successful - Server pinged
+Keeping alive...
+Keep-alive successful - Server pinged
+Keeping alive...
+Keep-alive successful - Server pinged
+Keeping alive...
+Keep-alive successful - Server pinged
+Keeping alive...
+Keep-alive successful - Server pinged
