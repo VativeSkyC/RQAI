@@ -1,5 +1,5 @@
 const { Pool } = require('pg');
-const retry = require('retry-as-promised');
+const retryAsPromised = require('retry-as-promised');
 
 // Singleton connection manager to handle reconnections
 class ConnectionManager {
@@ -143,7 +143,7 @@ class ConnectionManager {
       }
 
       // Use retry-as-promised for robust query execution
-      return await retry(async () => {
+      return await retryAsPromised(async () => {
         try {
           const client = await this.pool.connect();
           try {
