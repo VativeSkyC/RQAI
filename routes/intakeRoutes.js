@@ -32,42 +32,49 @@ router.post('/receive-data', async (req, res) => {
   console.log('Received caller_id in request:', callerPhone);
   console.log('Received call_sid in request:', callSid);
   
-  // If we don't have a caller_id but do have a call_sid, look it up in temp_calls
-  if (!callerPhone && callSid) {
-    console.log('Looking up caller phone from call_sid in temp_calls:', callSid);
+  // If callerPhone is undefined, "unknown", or otherwise invalid, use the fallback
+  if (!callerPhone || callerPhone === "unknown" || callerPhone === "") {
+    console.log('Received invalid caller_id in request:', callerPhone);
+    console.log('Using fallback phone number from personalization webhook');
     
-    try {
-      // Try to find the phone number in temp_calls table using the call_sid
-      const callResult = await client.query(
-        'SELECT phone_number FROM temp_calls WHERE call_sid = $1',
-        [callSid]
-      );
+    // If we have a call_sid, try to look it up in temp_calls or call_log
+    if (callSid) {
+      console.log('Looking up caller phone from call_sid in temp_calls:', callSid);
       
-      if (callResult.rows.length > 0) {
-        callerPhone = callResult.rows[0].phone_number;
-        console.log('Retrieved phone number from temp_calls:', callerPhone);
-      } else {
-        // Fallback to call_log if not found in temp_calls
-        console.log('Call not found in temp_calls, checking call_log...');
-        const logResult = await client.query(
-          'SELECT phone_number FROM call_log WHERE call_sid = $1',
+      try {
+        // Try to find the phone number in temp_calls table using the call_sid
+        const callResult = await client.query(
+          'SELECT phone_number FROM temp_calls WHERE call_sid = $1',
           [callSid]
         );
         
-        if (logResult.rows.length > 0) {
-          callerPhone = logResult.rows[0].phone_number;
-          console.log('Retrieved phone number from call_log:', callerPhone);
+        if (callResult.rows.length > 0) {
+          callerPhone = callResult.rows[0].phone_number;
+          console.log('Retrieved phone number from temp_calls:', callerPhone);
+        } else {
+          // Fallback to call_log if not found in temp_calls
+          console.log('Call not found in temp_calls, checking call_log...');
+          const logResult = await client.query(
+            'SELECT phone_number FROM call_log WHERE call_sid = $1',
+            [callSid]
+          );
+          
+          if (logResult.rows.length > 0) {
+            callerPhone = logResult.rows[0].phone_number;
+            console.log('Retrieved phone number from call_log:', callerPhone);
+          }
         }
+      } catch (lookupError) {
+        console.error('Error looking up call data:', lookupError.message);
       }
-    } catch (lookupError) {
-      console.error('Error looking up call data:', lookupError.message);
     }
   }
   
-  // If still missing, use the fallback from the personalization webhook
-  if (!callerPhone) {
+  // If still missing or invalid, use the known test number
+  if (!callerPhone || callerPhone === "unknown" || callerPhone === "") {
     console.warn('⚠️ USING FALLBACK CALLER ID: No valid caller ID could be determined');
     callerPhone = '+15132017748'; // Fallback for testing
+    console.log('Set callerPhone to fallback number:', callerPhone);
   }
   
   console.log('Looking up contact with phone number:', callerPhone);
@@ -86,13 +93,25 @@ router.post('/receive-data', async (req, res) => {
     );
     
     if (contactResult.rows.length === 0) {
-      console.error(`ERROR: No contact found with phone number: ${callerPhone}`);
+      console.error(`❌ ERROR: No contact found with phone number: ${callerPhone}`);
+      console.log('Attempting to list all available contacts to debug:');
+      
+      try {
+        const allContacts = await client.query('SELECT id, phone_number, first_name, last_name FROM contacts LIMIT 10');
+        console.log('Available contacts:', JSON.stringify(allContacts.rows, null, 2));
+      } catch (listError) {
+        console.error('Error listing contacts:', listError.message);
+      }
+      
       await client.query('ROLLBACK');
       return res.status(404).json({ 
         error: 'Contact not found', 
-        message: `No contact found with phone number: ${callerPhone}`
+        message: `No contact found with phone number: ${callerPhone}`,
+        phone_attempted: callerPhone
       });
     }
+    
+    console.log(`✅ Successfully found contact with phone number: ${callerPhone}`);
     
     const { id: contactId, user_id } = contactResult.rows[0];
     console.log(`Found contact ID: ${contactId} for phone: ${callerPhone}`);
@@ -106,6 +125,9 @@ router.post('/receive-data', async (req, res) => {
     console.log('- professional_goals:', professional_goals || 'NULL');
     console.log('- partnership_expectations:', partnership_expectations || 'NULL');
     console.log('- raw_transcript:', raw_transcript ? 'PRESENT' : 'NULL');
+    
+    console.log('🔄 ATTEMPTING DATABASE INSERT with phone:', callerPhone);
+    console.log('🔄 Contact ID:', contactId, 'User ID:', user_id);
     
     const insertResult = await client.query(`
       INSERT INTO intake_responses (
@@ -128,6 +150,8 @@ router.post('/receive-data', async (req, res) => {
       partnership_expectations || null, 
       raw_transcript || null
     ]);
+    
+    console.log('✅ DATABASE INSERT SUCCESSFUL! New intake response ID:', insertResult.rows[0].id);
 
     const newResponseId = insertResult.rows[0].id;
     console.log('===== TRANSACTION DETAILS =====');
