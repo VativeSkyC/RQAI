@@ -91,31 +91,28 @@ async function processIntakeData(data) {
     const idempotencyKey = `elevenlabs-${timestamp}-${randomPart}`;
     console.log('Processing with idempotency key:', idempotencyKey);
 
-    // Get database connection from global app
-    const pool = global.app.get('pool');
-    if (!pool) {
-      console.error('Database connection not available');
-      throw new Error('Database connection not available');
-    }
-
-    const client = await pool.connect();
+    // Use direct pool query like in auth.js, which works with Supabase
     try {
-      // Begin transaction
-      await client.query('BEGIN');
+      console.log('Getting database pool directly from global app');
+      const pool = global.app.get('pool');
+      if (!pool) {
+        throw new Error('Database connection not available');
+      }
 
-      // First, check if we already have a record with this phone number in intake_responses
-      const checkExisting = await client.query(
+      console.log('Checking if phone number already exists:', data.caller);
+      // Check if record exists
+      const checkResult = await pool.query(
         'SELECT id FROM intake_responses WHERE phone_number = $1',
         [data.caller]
       );
 
       let intakeId;
-      if (checkExisting.rows.length > 0) {
-        // Update existing record
-        intakeId = checkExisting.rows[0].id;
+      if (checkResult.rows.length > 0) {
+        // Update existing record - using direct pool query
+        intakeId = checkResult.rows[0].id;
         console.log(`Updating existing intake record #${intakeId} for phone ${data.caller}`);
 
-        await client.query(`
+        await pool.query(`
           UPDATE intake_responses
           SET 
             communication_style = $1,
@@ -133,11 +130,13 @@ async function processIntakeData(data) {
           data.raw_transcript,
           intakeId
         ]);
+
+        console.log(`Successfully updated intake record #${intakeId}`);
       } else {
-        // Insert new record
+        // Insert new record - using direct pool query like in auth.js
         console.log(`Creating new intake record for phone ${data.caller}`);
 
-        const result = await client.query(`
+        const insertResult = await pool.query(`
           INSERT INTO intake_responses 
           (phone_number, communication_style, values, professional_goals, 
            partnership_expectations, raw_transcript, created_at, updated_at)
@@ -145,18 +144,16 @@ async function processIntakeData(data) {
           RETURNING id
         `, [
           data.caller,
-          data.communication_style,
+          data.communication_style, 
           data.values,
           data.professional_goals,
           data.partnership_expectations,
           data.raw_transcript
         ]);
 
-        intakeId = result.rows[0].id;
+        intakeId = insertResult.rows[0].id;
+        console.log(`Successfully inserted new intake record with ID: ${intakeId}`);
       }
-
-      // Commit transaction
-      await client.query('COMMIT');
 
       console.log(`Successfully saved intake data with ID: ${intakeId}`);
 
@@ -174,11 +171,8 @@ async function processIntakeData(data) {
         }
       };
     } catch (error) {
-      await client.query('ROLLBACK');
       console.error('Database error saving intake data:', error);
       throw error;
-    } finally {
-      client.release();
     }
   } catch (error) {
     console.error('Error processing intake data:', error);
