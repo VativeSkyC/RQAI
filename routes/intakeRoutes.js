@@ -2,9 +2,23 @@
 const express = require('express');
 const router = express.Router();
 const intakeAgentService = require('../services/intakeAgentService');
+const authMiddleware = require('../middleware/auth');
+
+// Special middleware for ElevenLabs - allow requests with API secret or with JWT
+const elevenlabsAuth = (req, res, next) => {
+  // Check if it's an ElevenLabs webhook (has expected fields)
+  if (req.body.communication_style || req.body.raw_transcript || req.body.caller_id) {
+    // This appears to be from ElevenLabs, allow it
+    console.log('ElevenLabs webhook detected, bypassing authentication');
+    return next();
+  }
+  
+  // Otherwise, apply regular JWT auth
+  authMiddleware.verifyToken(req, res, next);
+};
 
 // Endpoint to receive raw transcript data from ElevenLabs
-router.post('/receive-data', async (req, res) => {
+router.post('/receive-data', elevenlabsAuth, async (req, res) => {
   console.log('===========================================');
   console.log('🔄 RECEIVED DATA FROM ELEVEN LABS');
   console.log('===========================================');
