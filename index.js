@@ -15,6 +15,7 @@ const authRoutes = require('./routes/auth');
 const contactRoutes = require('./routes/contacts');
 const messagingRoutes = require('./routes/messaging');
 const twilioRoutes = require('./routes/twilio');
+const intakeRoutes = require('./routes/intakeRoutes');
 
 // Middleware
 app.use(bodyParser.json());
@@ -72,6 +73,7 @@ app.use('/', authRoutes);
 app.use('/contacts', contactRoutes);
 app.use('/', messagingRoutes);
 app.use('/', twilioRoutes); // Keep the root path for twilio endpoints
+app.use('/', intakeRoutes); // Add the new intake routes
 
 // Redirect to the static version of the interface
 app.get('/old-interface', (req, res) => {
@@ -108,82 +110,18 @@ app.get('/db-check', async (req, res) => {
   }
 });
 
-// Data reception endpoint from Eleven Labs - GET route for testing
+// Data reception endpoint - redirected to dedicated intake routes file
 app.get('/receive-data', async (req, res) => {
-  console.log('DEBUG: Received GET request to /receive-data');
-
-  try {
-    // Check if the database is accessible
-    const pool = app.get('pool');
-    const client = await pool.connect();
-
-    try {
-      // Check if tables exist first to avoid errors
-      const tableCheckResult = await client.query(`
-        SELECT EXISTS (
-          SELECT FROM information_schema.tables 
-          WHERE table_name = 'call_log'
-        )
-      `);
-
-      const tableExists = tableCheckResult.rows[0].exists;
-      let recentCalls = [];
-
-      if (tableExists) {
-        const callLogResult = await client.query(
-          'SELECT call_sid, phone_number, status, created_at, processed_at FROM call_log ORDER BY created_at DESC LIMIT 5'
-        );
-        recentCalls = callLogResult.rows;
-      }
-
-      // Return a test response for easier debugging
-      res.status(200).json({
-        status: "success",
-        message: 'This endpoint requires a POST request with callSid from Eleven Labs',
-        note: 'This GET handler is for debugging only',
-        server_time: new Date().toISOString(),
-        database_connected: true,
-        call_log_table_exists: tableExists,
-        recent_calls: recentCalls,
-        ngrok_url: req.headers['x-forwarded-proto'] ? 
-                  `${req.headers['x-forwarded-proto']}://${req.headers.host}` : 
-                  "Unknown ngrok URL",
-        expected_post_format: {
-          callSid: "CALL_SID_FROM_TWILIO",
-          communication_style: "Sample communication style",
-          goals: "Sample goals",
-          values: "Sample values",
-          professional_goals: "Sample professional goals",
-          partnership_expectations: "Sample partnership expectations",
-          raw_transcript: "Sample raw transcript"
-        }
-      });
-    } catch (dbError) {
-      console.error('Database error:', dbError.message);
-      res.status(500).json({ 
-        status: "error", 
-        message: 'Database error', 
-        error: dbError.message,
-        database_connected: false,
-        ngrok_url: req.headers['x-forwarded-proto'] ? 
-                  `${req.headers['x-forwarded-proto']}://${req.headers.host}` : 
-                  "Unknown ngrok URL"
-      });
-    } finally {
-      client.release();
-    }
-  } catch (connectionError) {
-    console.error('Database connection error:', connectionError.message);
-    res.status(500).json({ 
-      status: "error", 
-      message: 'Database connection error', 
-      error: connectionError.message,
-      database_connected: false,
-      ngrok_url: req.headers['x-forwarded-proto'] ? 
-                `${req.headers['x-forwarded-proto']}://${req.headers.host}` : 
-                "Unknown ngrok URL"
-    });
-  }
+  console.log('DEBUG: Redirecting to new intake routes module');
+  res.status(200).json({
+    status: "success",
+    message: 'This endpoint is now handled by the intakeRoutes module',
+    note: 'For proper processing, please send a POST request to /receive-data',
+    server_time: new Date().toISOString(),
+    ngrok_url: req.headers['x-forwarded-proto'] ? 
+              `${req.headers['x-forwarded-proto']}://${req.headers.host}` : 
+              "Unknown ngrok URL",
+  });
 });
 
 // Improved keep-alive mechanism
