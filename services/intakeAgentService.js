@@ -41,12 +41,26 @@ async function parseTranscript(rawTranscript) {
     // Extract the parsed fields from the OpenAI response
     const parsedData = JSON.parse(response.data.choices[0].message.content);
     
+    // Log the raw response from OpenAI
+    console.log('=== RAW LLM RESPONSE ===');
+    console.log(JSON.stringify(response.data.choices[0].message.content, null, 2));
+    
     // Basic validation of the response format
-    if (!parsedData.communication_style && 
-        !parsedData.professional_goals && 
-        !parsedData.values && 
-        !parsedData.partnership_expectations) {
-      console.warn('OpenAI response missing some required fields:', parsedData);
+    const fieldsPresent = {
+      communication_style: !!parsedData.communication_style || !!parsedData.communicationStyle || !!parsedData.communication_Style,
+      professional_goals: !!parsedData.professional_goals || !!parsedData.professionalGoals,
+      values: !!parsedData.values,
+      partnership_expectations: !!parsedData.partnership_expectations || !!parsedData.partnershipExpectations
+    };
+    
+    console.log('=== FIELDS PRESENT IN RESPONSE ===');
+    console.log(JSON.stringify(fieldsPresent, null, 2));
+    
+    if (!fieldsPresent.communication_style || 
+        !fieldsPresent.professional_goals || 
+        !fieldsPresent.values || 
+        !fieldsPresent.partnership_expectations) {
+      console.warn('⚠️ OpenAI response missing some required fields:', parsedData);
     }
 
     return parsedData;
@@ -71,13 +85,18 @@ async function updateIntakeWithParsedData(pool, intakeResponseId, parsedData) {
   try {
     await client.query('BEGIN');
 
-    // Normalize field names from the API response (handle both camelCase and snake_case)
+    console.log('=== NORMALIZING FIELDS FROM PARSED DATA ===');
+    console.log('Raw parsed data:', JSON.stringify(parsedData, null, 2));
+    
+    // Normalize field names from the API response (handle all possible variations)
     const normalizedData = {
       communication_style: parsedData.communication_style || parsedData.communicationStyle || parsedData.communication_Style || null,
-      professional_goals: parsedData.professional_goals || parsedData.professionalGoals || null,
+      professional_goals: parsedData.professional_goals || parsedData.professionalGoals || parsedData.professional_goals || null,
       values: parsedData.values || null,
       partnership_expectations: parsedData.partnership_expectations || parsedData.partnershipExpectations || null
     };
+    
+    console.log('Normalized data:', JSON.stringify(normalizedData, null, 2));
 
     // Update the intake_responses record with the normalized fields
     const result = await client.query(`

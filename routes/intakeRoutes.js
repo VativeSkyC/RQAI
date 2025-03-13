@@ -5,7 +5,10 @@ const intakeAgentService = require('../services/intakeAgentService');
 
 // Endpoint to receive raw transcript data from ElevenLabs
 router.post('/receive-data', async (req, res) => {
-  console.log('DEBUG: /receive-data called');
+  console.log('===========================================');
+  console.log('🔄 RECEIVED DATA FROM ELEVEN LABS');
+  console.log('===========================================');
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
   console.log('Request body:', JSON.stringify(req.body, null, 2));
 
   // Extract the raw transcript
