@@ -1,0 +1,146 @@
+Overall, **your code looks well thought-out** for storing the intake data immediately and optionally doing an asynchronous parse. Here is a **final check** to ensure the system actually inserts data into Supabase and you see your newly inserted rows:
+
+---
+
+## 1. Confirm You **Attach** the `pool` to `req.app.set('pool', pool)` in `index.js`
+
+In your main server file (e.g. `index.js`), you should have something like:
+
+```js
+const express = require('express');
+const { Pool } = require('pg');
+const app = express();
+const router = require('./routes/receiveData'); // your router file
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  // ... any other pool config
+});
+
+// Attach the pool to the Express app for reuse
+app.set('pool', pool);
+
+// Use your router
+app.use('/', router);
+
+app.listen(...);
+```
+
+**Without** `app.set('pool', pool)` (or a similar approach), `req.app.get('pool')` in your route will be `undefined`.
+
+---
+
+## 2. Double-Check You’re Using the **Supabase** `DATABASE_URL`
+
+- Make sure your environment variable `DATABASE_URL` is set to the **Supabase** connection string, e.g.:
+
+  ```
+  postgres://username:password@db.<random-id>.supabase.co:5432/postgres?sslmode=require
+  ```
+
+- In Replit’s Secrets panel, confirm that is the string you see. If you see logs about “Database connection established to local” or such, you might be referencing a local DB.  
+- Check in your logs or console that you do not see any leftover “terminating connection due to admin command” from a local DB.  
+
+---
+
+## 3. Watch the `/receive-data` Logs for:
+
+1. **Caller phone** final choice.  
+2. **Contact** found or not.  
+3. **INSERT** success logs.  
+4. **COMMIT** success logs.  
+
+Your logs show the final lines:
+
+```
+=== INTAKE FIELDS ANALYSIS ===
+callSid: ...
+Processing with idempotency key...
+Keeping alive...
+Keep-alive successful
+```
+
+But do we see:
+
+```
+=== STARTING DATABASE OPERATIONS ===
+🔄 ATTEMPTING DATABASE INSERT with phone ...
+✅ DATABASE INSERT SUCCESSFUL! New intake response ID: ...
+TRANSACTION COMMITTED SUCCESSFULLY ✅
+```
+
+If we **never** see those lines, that means the code path might be returning early (e.g., no contact found, or a missing fallback).
+
+---
+
+## 4. Confirm the **Personalization** Data Reaches `/receive-data`
+
+Right now, you do:
+
+```js
+// If callerPhone is "unknown", we look up callSid in temp_calls/call_log
+// fallback to +15132017748
+```
+
+Make sure that `callSid` is present in the final request or you’ve properly inserted `(callSid, phone_number)` into `temp_calls` or `call_log` earlier. If you rely on the phone number from `personalization`, but ElevenLabs final callback only has `caller_id: "unknown"`, you do this fallback:
+
+```js
+callerPhone = '+15132017748';
+```
+
+**That’s fine** if that phone number actually exists in your `contacts` table. If so, you’ll do a successful match:
+
+```js
+SELECT id, user_id FROM contacts WHERE phone_number = '+15132017748' LIMIT 1
+```
+
+Otherwise, you’ll see “No contact found with phone number +15132017748” and a `ROLLBACK`.
+
+---
+
+## 5. `intakeAgentService.parseTranscript(...)` Calls
+
+Your code calls `parseTranscriptAsync` **only** if `(raw_transcript && (!communication_style || !values || !professional_goals || !partnership_expectations))`. That means if **all** four fields are present (like in your logs), you skip the parse step. That’s actually fine, because you’re directly storing them. The synchronous insert has them, so no parse is needed.
+
+**Just make sure** your new record has them. If you see them in the logs:
+
+```
+ console.log('- communication_style:', communication_style || 'NULL');
+ console.log('- values:', values || 'NULL');
+ ...
+```
+
+… but never see:
+
+```
+✅ DATABASE INSERT SUCCESSFUL!
+```
+
+…you know the code path ended early. Check that carefully.  
+
+---
+
+## Summary of Why This Code Should Work
+
+1. We see you **commit** the transaction (`await client.query('COMMIT');`).  
+2. You **log** the success with `New intake response ID: ...`.  
+3. You optionally call `processTranscriptAsync(...)` if some fields are missing.  
+
+If you don’t see that final log, it’s returning before the insert. Possibly:
+
+- **No contact** is found and you do `ROLLBACK` + `return res.status(404)`.  
+- Or an uncaught error triggers the catch block.  
+- Or you never actually attach `pool` to `req.app` so `client` is undefined.
+
+---
+
+## Conclusion
+
+**Yes**, the snippet looks well-structured. If the insert is still not happening, then:
+
+1. **Add logs** to confirm you don’t bail out before `INSERT`.  
+2. Confirm the fallback phone number is indeed in your `contacts` table.  
+3. Make sure your code calls the snippet you posted. (No duplicate routes overshadowing it, etc.)  
+4. Check your Supabase table directly. Possibly it’s there but you haven’t looked at the correct table or schema.
+
+Do those checks, and you should see fresh rows in `intake_responses` for every call. Good luck!
