@@ -6,12 +6,32 @@ let pool = null;
 
 // Initialize the pool with connection parameters
 function initialize(connectionString) {
-  pool = new Pool({
-    connectionString: connectionString || process.env.DATABASE_URL,
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
+  console.log('Initializing database connection with URL:', 
+              connectionString ? 'CONNECTION_STRING_PROVIDED' : 'No connection string provided');
+  
+  // Create connection configuration
+  const poolConfig = connectionString 
+    ? { connectionString } 
+    : {
+        user: process.env.DB_USER || 'postgres',
+        host: process.env.DB_HOST || 'localhost',
+        database: process.env.DB_NAME || 'twilio_project',
+        password: process.env.DB_PASSWORD || 'postgres',
+        port: process.env.DB_PORT || 5432,
+      };
+  
+  // Add common options
+  poolConfig.max = 20;
+  poolConfig.idleTimeoutMillis = 30000;
+  poolConfig.connectionTimeoutMillis = 10000;
+  
+  console.log('Creating pool with config:', {
+    ...poolConfig,
+    password: poolConfig.password ? '***HIDDEN***' : undefined,
+    connectionString: poolConfig.connectionString ? '***HIDDEN***' : undefined
   });
+  
+  pool = new Pool(poolConfig);
 
   // Log connection events for debugging
   pool.on('connect', () => {
@@ -43,13 +63,10 @@ async function getClient() {
     }
   }, {
     max: 5, // Maximum number of retries
-    timeout: 60000, // Overall timeout for all retries
-    backoffBase: 1000, // Initial backoff duration
-    backoffExponent: 1.5, // Backoff factor
-    report: (message) => {
-      console.log('Retry attempt:', message);
-    },
-    name: 'Database connection retry'
+    timeout: 60000, // Overall timeout in milliseconds
+    backoffBase: 1000, // Initial backoff duration in milliseconds
+    backoffExponent: 1.5, // Exponent for exponential backoff
+    report: (message) => console.log(`Retry status: ${message}`)
   });
 }
 
@@ -93,7 +110,6 @@ async function testConnection() {
   } finally {
     if (client) {
       client.release();
-      console.log('Connection released after test');
     }
   }
 }

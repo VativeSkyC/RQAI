@@ -1,0 +1,47 @@
+NGROK LOG: t=2025-03-13T03:09:45+0000 lvl=info msg="join connections" obj=join id=aa511f4820cd l=127.0.0.1:5001 r=34.67.146.145:1697
+Personalization webhook triggered: {
+  caller_id: '+15132017748',
+  agent_id: '2p88oZd50AEryCjzugGe',
+  called_number: '+15139517691',
+  call_sid: 'CA45840be6966a2a5ab9655c04e4d5bb2f'
+}
+Found existing contact: { id: 1, first_name: 'Testing', last_name: 'Roberts', user_id: 1 }
+Returning intake questionnaire for contact: Testing
+Keeping alive...
+Keeping alive...
+Keep-alive successful - Server pinged
+Database keep-alive ping successful
+Keeping alive...
+Keep-alive successful - Server pinged
+Keeping alive...
+Database keep-alive ping successful
+Keeping alive...
+Keep-alive successful - Server pinged
+NGROK LOG: t=2025-03-13T03:10:49+0000 lvl=info msg="join connections" obj=join id=52aec94c9a55 l=127.0.0.1:5001 r=216.144.248.29:43238
+Received ping from UptimeRobot at 2025-03-13T03:10:49.184Z
+Keeping alive...
+Keeping alive...
+Keep-alive successful - Server pinged
+Database keep-alive ping successful
+NGROK LOG: t=2025-03-13T03:11:02+0000 lvl=info msg="join connections" obj=join id=36efc93fbf5e l=127.0.0.1:5001 r=34.67.146.145:1586
+===========================================
+🔄 RECEIVED DATA FROM ELEVEN LABS
+===========================================
+Headers: {
+  "host": "ai-relationship-agent.ngrok.io",
+  "user-agent": "Python/3.12 aiohttp/3.10.11",
+  "content-length": "1480",
+  "accept": "*/*",
+  "accept-encoding": "gzip, deflate",
+  "content-type": "application/json",
+  "x-forwarded-for": "34.67.146.145",
+  "x-forwarded-host": "ai-relationship-agent.ngrok.io",
+  "x-forwarded-proto": "https"
+}
+Request body: {
+  "communicationStyle": "Direct and concise. The more direct, the better.",
+  "partnership_expectations": "Regular updates is required.",
+  "raw_transcript": "AI: Hello Testing, Chase asked me to learn more about your professional goals. When you're ready, let me know and we will get started.\nHuman: I'm ready.\nAI: Great! Let's begin with my first question about your communication style. How would you describe your preferred communication style—do you lean toward direct and concise, or collaborative and detailed? Please elaborate.\nHuman: Direct and concise. The more direct, the better.\nAI: Thank you for that clear response. Now, I'd like to know about your professional goals. What are your top professional goals for the next year—growth, stability, or something else?\nHuman: Growth and stability are my top goals.\nAI: I understand that both growth and stability are priorities for you. What values are most important to you in a professional relationship, such as trust, innovation, or accountability?\nHuman: Trust is the most important for me.\nAI: Thank you for that. For my final question: What do you expect from a professional partnership—regular updates or strategic guidance?\nHuman: Regular updates is required.",
+  "goals": "Growth and stability in the professional sphere while maintaining direct communication and regular updates.",
+  "values": "Trust is the most important for me.",
+  "professional_goals": "Growth and stability are my top goals."

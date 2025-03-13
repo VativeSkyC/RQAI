@@ -264,6 +264,65 @@ app.get('/debug-config', (req, res) => {
       elevenlabs_secret_configured: !!process.env.ELEVENLABS_SECRET
     }
   });
+
+// Debug endpoint to check database credentials and connection
+app.get('/debug-database', async (req, res) => {
+  try {
+    // Show database environment variables (censored)
+    const dbConfig = {
+      DATABASE_URL: process.env.DATABASE_URL ? "***HIDDEN***" : undefined,
+      DB_HOST: process.env.DB_HOST,
+      DB_NAME: process.env.DB_NAME,
+      DB_USER: process.env.DB_USER,
+      DB_PORT: process.env.DB_PORT,
+      DB_PASSWORD: process.env.DB_PASSWORD ? "***HIDDEN***" : undefined,
+    };
+    
+    // Test connection
+    let connectionStatus = "Unknown";
+    let testResult = null;
+    let tables = [];
+    
+    try {
+      const pool = req.app.get('pool');
+      if (!pool) {
+        connectionStatus = "No pool available";
+      } else {
+        const client = await pool.connect();
+        try {
+          connectionStatus = "Connected";
+          // Test query
+          testResult = await client.query('SELECT NOW() as server_time');
+          
+          // Get list of tables
+          const tablesResult = await client.query(`
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public'
+            ORDER BY table_name
+          `);
+          tables = tablesResult.rows.map(row => row.table_name);
+        } finally {
+          client.release();
+        }
+      }
+    } catch (error) {
+      connectionStatus = `Error: ${error.message}`;
+    }
+    
+    res.json({
+      database_config: dbConfig,
+      connection_status: connectionStatus,
+      server_time: testResult?.rows[0]?.server_time,
+      tables: tables,
+      global_ngrok_url: global.ngrokUrl,
+      server_port: activePort
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 });
 
 // Start server and ngrok tunnel with port fallback

@@ -217,7 +217,46 @@ router.post('/receive-data', async (req, res) => {
   console.log('Request body:', JSON.stringify(req.body, null, 2));
   console.log('Timestamp:', new Date().toISOString());
   
-  // Log specifically the intake fields we're looking for
+  // Extract data from all possible locations in the response
+  // ElevenLabs might nest the data in different ways
+  let extractedData = {
+    callSid: null,
+    caller: null,
+    communication_style: null,
+    values: null,
+    professional_goals: null,
+    partnership_expectations: null,
+    raw_transcript: null
+  };
+
+  // First try direct properties
+  extractedData.callSid = req.body.callSid || req.body.call_sid;
+  extractedData.caller = req.body.caller || req.body.caller_id;
+  extractedData.communication_style = req.body.communication_style;
+  extractedData.values = req.body.values;
+  extractedData.professional_goals = req.body.professional_goals;
+  extractedData.partnership_expectations = req.body.partnership_expectations;
+  extractedData.raw_transcript = req.body.raw_transcript || req.body.transcript;
+
+  // Try to find nested properties in data or conversation object
+  const possibleDataObjects = [req.body.data, req.body.conversation, req.body.responses, req.body.result];
+  for (const dataObj of possibleDataObjects) {
+    if (dataObj && typeof dataObj === 'object') {
+      // Only update values that are still null
+      if (!extractedData.callSid) extractedData.callSid = dataObj.callSid || dataObj.call_sid;
+      if (!extractedData.caller) extractedData.caller = dataObj.caller || dataObj.caller_id;
+      if (!extractedData.communication_style) extractedData.communication_style = dataObj.communication_style;
+      if (!extractedData.values) extractedData.values = dataObj.values;
+      if (!extractedData.professional_goals) extractedData.professional_goals = dataObj.professional_goals;
+      if (!extractedData.partnership_expectations) extractedData.partnership_expectations = dataObj.partnership_expectations;
+      if (!extractedData.raw_transcript) extractedData.raw_transcript = dataObj.raw_transcript || dataObj.transcript;
+    }
+  }
+  
+  console.log('=== EXTRACTED DATA ===');
+  console.log(JSON.stringify(extractedData, null, 2));
+  
+  // Destructure the extracted data for use in the rest of the function
   const { 
     callSid, 
     caller,
@@ -226,7 +265,7 @@ router.post('/receive-data', async (req, res) => {
     professional_goals, 
     partnership_expectations, 
     raw_transcript 
-  } = req.body;
+  } = extractedData;
   
   console.log('=== INTAKE FIELDS ANALYSIS ===');
   console.log('callSid:', callSid || 'NOT PROVIDED');
@@ -461,22 +500,39 @@ router.post('/receive-data', async (req, res) => {
 
         // Store intake data with proper transaction and clear logging
         console.log('Executing INSERT query...');
-        const insertResult = await client.query(
-          `INSERT INTO intake_responses (
-            contact_id, user_id, communication_style, values, 
-            professional_goals, partnership_expectations, raw_transcript, created_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-          RETURNING id`,
-          [
-            contactId, 
-            userId, 
-            communicationStyle || null, 
-            values || null, 
-            professionalGoals || null, 
-            partnershipExpectations || null, 
-            rawTranscript || null
-          ]
-        );
+        console.log('Attempting to insert intake response with data:');
+        console.log('- contact_id:', contactId);
+        console.log('- user_id:', userId);
+        console.log('- communication_style:', communicationStyle || null);
+        console.log('- values:', values || null);
+        console.log('- professional_goals:', professionalGoals || null);
+        console.log('- partnership_expectations:', partnershipExpectations || null);
+        console.log('- raw_transcript:', rawTranscript ? 'Present' : 'Null');
+        
+        try {
+          const insertResult = await client.query(
+            `INSERT INTO intake_responses (
+              contact_id, user_id, communication_style, values, 
+              professional_goals, partnership_expectations, raw_transcript, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            RETURNING id`,
+            [
+              contactId, 
+              userId, 
+              communicationStyle || null, 
+              values || null, 
+              professionalGoals || null, 
+              partnershipExpectations || null, 
+              rawTranscript || null
+            ]
+          );
+          console.log('INSERT successful, new row ID:', insertResult.rows[0]?.id);
+        } catch (insertError) {
+          console.error('INSERT ERROR:', insertError.message);
+          console.error('INSERT DETAIL:', insertError.detail);
+          console.error('INSERT HINT:', insertError.hint);
+          throw insertError; // Re-throw for the outer catch block
+        }
         
         console.log(`INSERT successful. New intake_responses row ID: ${insertResult.rows[0]?.id || 'unknown'}`);
 
