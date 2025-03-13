@@ -24,7 +24,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Import connection manager and retry library
 const connectionManager = require('./services/connectionManager');
-const retry = require('retry-as-promised');
+const { retryAsPromised } = require('retry-as-promised');
 
 // Initialize database connection
 const initializeDatabase = () => {
@@ -36,14 +36,18 @@ const initializeDatabase = () => {
     app.set('pool', pool);
 
     // Try to connect and create tables
-    connectionManager.getClient()
+    retryAsPromised({
+      retries: 5,
+      factor: 2,
+      minTimeout: 1000,
+    })(connectionManager.getClient())
       .then(async (client) => {
         try {
           console.log('Connected to PostgreSQL');
           // Ensure tables are created
           await dbService.createTables(pool);
           console.log('Database schema initialized successfully');
-          
+
           // Set up a scheduled keep-alive ping
           setInterval(() => {
             console.log('Keeping alive...');
@@ -55,8 +59,8 @@ const initializeDatabase = () => {
       })
       .catch((error) => {
         console.error('Initial PostgreSQL connection error:', error.message);
-        console.log('Retrying in 5 seconds...');
-        setTimeout(initializeDatabase, 5000);
+        console.log('Retry failed after multiple attempts.');
+        // Handle the case where all retries failed - you might want to exit or alert
       });
   } catch (error) {
     console.error('Error initializing database connection:', error.message);
@@ -90,7 +94,7 @@ app.get('/db-check', async (req, res) => {
         WHERE table_schema = 'public'
         ORDER BY table_name
       `);
-      
+
       res.json({
         status: 'connected',
         tables: result.rows.map(row => row.table_name),

@@ -1,106 +1,72 @@
-
 const { Pool } = require('pg');
-const retry = require('retry-as-promised');
+const { retryAsPromised } = require('retry-as-promised');
 
-let pool;
-let pingCounter = 0;
+// Create a pool with connection parameters from environment variables
+const pool = new Pool({
+  user: process.env.DB_USER || 'postgres',
+  host: process.env.DB_HOST || 'localhost',
+  database: process.env.DB_NAME || 'twilio_project',
+  password: process.env.DB_PASSWORD || 'postgres',
+  port: process.env.DB_PORT || 5432,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+});
 
-/**
- * Initialize the database connection pool
- * @param {string} connectionString - PostgreSQL connection string
- * @returns {Pool} The connection pool
- */
-function initialize(connectionString) {
-  if (!pool) {
-    try {
-      // Validate connection string
-      if (!connectionString) {
-        throw new Error('Connection string is required');
-      }
+// Log connection events for debugging
+pool.on('connect', () => {
+  console.log('Database connection established');
+});
 
-      // Create a connection pool
-      pool = new Pool({
-        connectionString,
-        max: 20,
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 5000,
-      });
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client:', err.message);
+});
 
-      console.log('Created new database connection pool');
-    } catch (error) {
-      console.error('Error initializing pool:', error.message);
-      throw error;
-    }
-  }
-  return pool;
-}
-
-/**
- * Get a database client with retry logic
- * @returns {Promise<Client>} PostgreSQL client
- */
+// Function to get a pool connection with retry logic
 async function getClient() {
-  if (!pool) {
-    throw new Error('Pool not initialized');
-  }
-
-  return retry(async () => {
-    const client = await pool.connect();
-    return client;
-  }, {
-    max: 5,                  // Maximum amount of tries
-    timeout: 10000,          // Timeout between retries in ms
-    backoffBase: 1000,       // Initial backoff duration in ms
-    backoffExponent: 1.5,    // Exponential factor
-    name: 'pg-connect',      // If name is provided, logs will have prefix
-    match: [
-      /Connection terminated/,
-      /Connection refused/,
-      /timeout exceeded/,
-      /ECONNREFUSED/,
-      /ENOTFOUND/
-    ],
-    report: (message, attempt, err) => {
-      console.log(`Database connection attempt ${attempt}: ${err.message}`);
+  return retryAsPromised(async () => {
+    try {
+      const client = await pool.connect();
+      console.log('Pool connection acquired');
+      return client;
+    } catch (err) {
+      console.error('Initial PostgreSQL connection error:', err.message);
+      console.log('Retrying in 5 seconds...');
+      throw err; // Throw the error so retry-as-promised can catch it
     }
+  }, {
+    max: 5, // Maximum number of retries
+    timeout: 60000, // Overall timeout for all retries
+    backoffBase: 1000, // Initial backoff duration
+    backoffExponent: 1.5, // Backoff factor
+    report: (message) => {
+      console.log('Retry attempt:', message);
+    },
+    name: 'Database connection retry'
   });
 }
 
-/**
- * Keep the database connection alive
- * @returns {Promise<boolean>} True if ping succeeds
- */
-async function keepAlive() {
-  pingCounter++;
+// Test connection function
+async function testConnection() {
+  let client;
   try {
-    const client = await retry(async () => {
-      return await pool.connect();
-    }, {
-      max: 3,
-      timeout: 5000,
-      backoffBase: 1000,
-      backoffExponent: 1.5,
-      name: 'pg-ping',
-      report: (message, attempt, err) => {
-        console.log(`Keep-alive attempt ${attempt}: ${err.message}`);
-      }
-    });
-
-    try {
-      await client.query('SELECT 1');
-      console.log(`Keep-alive #${pingCounter} successful - Server pinged`);
-      return true;
-    } finally {
-      client.release();
-    }
-  } catch (error) {
-    console.error(`Keep-alive #${pingCounter} ping failed:`, error.message);
+    client = await getClient();
+    const result = await client.query('SELECT NOW() as current_time');
+    console.log('Database connection test successful:', result.rows[0].current_time);
+    return true;
+  } catch (err) {
+    console.error('Database connection test failed:', err.message);
     return false;
+  } finally {
+    if (client) {
+      client.release();
+      console.log('Connection released after test');
+    }
   }
 }
 
 module.exports = {
-  initialize,
+  pool,
   getClient,
-  keepAlive
+  testConnection
 };
