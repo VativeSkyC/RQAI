@@ -2,7 +2,7 @@
 const axios = require('axios');
 
 /**
- * Parses a raw transcript using a custom LLM (GPT-4o-mini or similar)
+ * Parses a raw transcript using OpenAI's API (GPT-4o-mini)
  * @param {string} rawTranscript - The raw transcript text to parse
  * @returns {Promise<Object>} - The parsed fields in JSON format
  */
@@ -13,10 +13,24 @@ async function parseTranscript(rawTranscript) {
       throw new Error('Empty transcript provided');
     }
 
-    // Call the LLM API (replace with your actual API endpoint)
-    const llmResponse = await axios.post(process.env.LLM_API_ENDPOINT, {
-      transcript: rawTranscript,
-      // Add any other parameters needed for your LLM API
+    // OpenAI API endpoint should be something like: https://api.openai.com/v1/chat/completions
+    const endpoint = process.env.LLM_API_ENDPOINT || 'https://api.openai.com/v1/chat/completions';
+    
+    // Call the OpenAI API
+    const response = await axios.post(endpoint, {
+      model: "gpt-4o-mini", // The model you're using
+      messages: [
+        {
+          role: "system", 
+          content: "You are an assistant that extracts information from intake call transcripts. Return ONLY a JSON object with these fields: communication_style, professional_goals, values, partnership_expectations. Do not include any other text in your response."
+        },
+        {
+          role: "user",
+          content: `Please analyze this intake call transcript and extract the key information into structured fields:\n\n${rawTranscript}`
+        }
+      ],
+      temperature: 0.3, // Lower temperature for more consistent extraction
+      response_format: { type: "json_object" } // Request JSON format directly
     }, {
       headers: {
         'Content-Type': 'application/json',
@@ -24,20 +38,23 @@ async function parseTranscript(rawTranscript) {
       }
     });
 
-    // Extract the parsed fields from the LLM response
-    const parsedData = llmResponse.data;
+    // Extract the parsed fields from the OpenAI response
+    const parsedData = JSON.parse(response.data.choices[0].message.content);
     
     // Basic validation of the response format
     if (!parsedData.communication_style && 
         !parsedData.professional_goals && 
         !parsedData.values && 
         !parsedData.partnership_expectations) {
-      throw new Error('LLM response missing required fields');
+      console.warn('OpenAI response missing some required fields:', parsedData);
     }
 
     return parsedData;
   } catch (error) {
-    console.error('Error parsing transcript with LLM:', error.message);
+    console.error('Error parsing transcript with OpenAI:', error.message);
+    if (error.response) {
+      console.error('OpenAI API error details:', error.response.data);
+    }
     throw error;
   }
 }
