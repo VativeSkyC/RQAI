@@ -1,0 +1,144 @@
+From these logs, we see that ElevenLabs did send a transcript with all four key fields:
+
+arduino
+Copy
+{
+  "communication_style": "Direct and concise...",
+  "values": "Trust is the absolute...",
+  "professional_goals": "Growth, wants to grow network...",
+  "partnership_expectations": "Strategic guidance...",
+  ...
+}
+And your debug output shows:
+
+makefile
+Copy
+=== INTAKE FIELDS ANALYSIS ===
+callSid: NOT PROVIDED
+caller: unknown
+communication_style: PRESENT
+values: PRESENT
+professional_goals: PRESENT
+partnership_expectations: PRESENT
+raw_transcript: PRESENT (726 chars)
+So the parsing/field extraction is working. Why is nothing going to Supabase? Here are the likely reasons:
+
+1) You’re Not Actually Inserting or Updating the DB After Parsing
+The logs end with:
+
+vbnet
+Copy
+Processing with idempotency key: elevenlabs-1741896460499-3j8rzo9uhci
+Keeping alive...
+Database keep-alive ping successful
+Keeping alive...
+Keep-alive successful - Server pinged
+…and no mention of “INSERT” or “UPDATE” queries being run. Usually, you’d see logs like Inserting row into intake_responses or Updated intake_responses with ID #....
+
+Possibility: You have a line like processTranscriptAsync(...) or updateIntakeWithParsedData(...) that’s never called. Or you do call it, but it throws an error (or hits a try/catch that silently returns) before we see logs. Another scenario: your code might rely on callSid or caller to find the contact—and not finding them means it skips the insert or update path.
+
+Check:
+Did you see any logs like “Found contact #1, storing data” or “Updating intake_responses table…”?
+If not, your code never hits the DB logic that’s supposed to do the insert or update.
+Solution:
+
+Add logs around your DB calls (INSERT, UPDATE) so you see them in the console.
+Ensure your code path that triggers the DB write is actually being called.
+2) Possibly Relying on callSid or caller for Contact Lookup
+The logs show "caller": "unknown" and "caller_id": "unknown". If your code tries:
+
+js
+Copy
+if (!callSid || !caller) {
+  // we skip the DB insertion or do a rollback
+}
+…then you never commit. Or you might do:
+
+js
+Copy
+const contactResult = await client.query(
+  'SELECT id FROM contacts WHERE phone_number = $1',
+  [caller || phoneNumber]
+);
+if (contactResult.rows.length === 0) {
+  await client.query('ROLLBACK');
+  return res.status(404).json({ error: 'Contact not found' });
+}
+But here, caller is “unknown”—a literal string. That likely doesn’t match your contact’s phone number in the DB. So you skip the insert.
+
+Check if you see a line like “No contact found for phone number: unknown.” If your code does ROLLBACK, you’d see that in logs. Otherwise, maybe you’re simply returning early or never calling the function.
+
+Solution:
+
+If the user’s phone number is truly unknown, either create a fallback contact or skip the contact-based insert.
+Or instruct ElevenLabs to provide the actual phone number.
+Or pass that phone number from personalization step to the final callback.
+3) Missing a Step to Actually Commit the Data
+Sometimes, the code is:
+
+js
+Copy
+try {
+  await client.query('BEGIN');
+// ...
+} finally {
+  client.release();
+}
+But there is no await client.query('COMMIT');. So it never commits the transaction.
+
+Check your code for the lines await client.query('COMMIT'); or if you do ROLLBACK by default. If you see no message about “Committed transaction,” you’ll never see the row in Supabase.
+
+4) A Crash or Silent Error
+If the code is wrapped in a try/catch with a console.error(...), you might see the error. If the catch doesn’t rethrow or doesn’t log, it might silently fail. Possibly the code calls:
+
+js
+Copy
+await client.query('INSERT ...');
+throw new Error('some other bug');
+…leading to a silent rollback.
+
+Check your logs for any mention of an error in the snippet around processTranscriptAsync or updateIntakeWithParsedData. If your logs never mention those calls, you must confirm they’re actually invoked.
+
+5) The id or contact_id Doesn’t Match
+If your code tries to do UPDATE intake_responses WHERE id = someValue, but that ID wasn’t created or is not the right row, you get zero updated rows. Or if you do an insert that references a non-existing contact. Hard to confirm without the code snippet, but it’s a standard mismatch problem.
+
+Next Steps to Pinpoint the Issue
+Add Logging around the insert/update logic:
+
+js
+Copy
+console.log('Starting DB insert for intake...');
+const result = await client.query('INSERT INTO intake_responses ...');
+console.log('Insert result:', result.rows);
+or for an update:
+
+js
+Copy
+console.log('Attempting to update intake_responses ID:', intakeId);
+const updateResult = await client.query('UPDATE intake_responses ... RETURNING *');
+console.log('Update complete:', updateResult.rows);
+Watch the logs after the call. If you never see these lines, your code path is skipping DB logic. If you do see them but the array is empty, you might have conditions that skip actual insertion or it might do ROLLBACK.
+
+Double-Check the phone number logic. The logs show caller_id: "unknown". If your code depends on phone-based lookups, you’ll never find the contact. That might cause an early return. You might just do a fallback:
+
+js
+Copy
+let phone = req.body.caller || req.body.phone_number;
+if (!phone || phone === 'unknown') {
+  phone = '+15132017748';  // or some fallback contact
+}
+Ensure the code has “commit”. If you see BEGIN, ensure there is a COMMIT. If not, add:
+
+js
+Copy
+await client.query('COMMIT');
+console.log('COMMIT done');
+Check your final Supabase table. If no new row or no updated row is there, you’ll see no effect. Possibly the code references a local DB or you forgot to remove your old pg instance from Replit. Confirm the DATABASE_URL is truly the Supabase connection.
+
+Conclusion
+Given the logs:
+
+All four fields are present from ElevenLabs.
+The code never logs a DB insert or update.
+The user is recognized in the personalization step (Found existing contact: { id: 1, ... }) but the final /receive-data logs do not mention “Found contact #1,” or any DB action.
+Therefore: your code is likely skipping the DB portion in /receive-data entirely—maybe because the phone is “unknown” or you have some condition that if callSid is missing, it never does the DB logic. Add logging around your insert or update calls to see if it’s invoked. Once you fix that logic path, the data will go to Supabase.
