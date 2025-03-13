@@ -210,8 +210,32 @@ router.post('/twilio-personalization', async (req, res) => {
 
 // Data reception endpoint from Eleven Labs
 router.post('/receive-data', async (req, res) => {
-  console.log('Received request to /receive-data from Eleven Labs');
+  console.log('===========================================');
+  console.log('🔄 RECEIVED DATA FROM ELEVEN LABS');
+  console.log('===========================================');
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
   console.log('Request body:', JSON.stringify(req.body, null, 2));
+  console.log('Timestamp:', new Date().toISOString());
+  
+  // Log specifically the intake fields we're looking for
+  const { 
+    callSid, 
+    caller,
+    communication_style, 
+    values, 
+    professional_goals, 
+    partnership_expectations, 
+    raw_transcript 
+  } = req.body;
+  
+  console.log('=== INTAKE FIELDS ANALYSIS ===');
+  console.log('callSid:', callSid || 'NOT PROVIDED');
+  console.log('caller:', caller || 'NOT PROVIDED');
+  console.log('communication_style:', communication_style ? 'PRESENT' : 'MISSING');
+  console.log('values:', values ? 'PRESENT' : 'MISSING');
+  console.log('professional_goals:', professional_goals ? 'PRESENT' : 'MISSING');
+  console.log('partnership_expectations:', partnership_expectations ? 'PRESENT' : 'MISSING');
+  console.log('raw_transcript:', raw_transcript ? `PRESENT (${raw_transcript.length} chars)` : 'MISSING');
   
   // Add idempotency key if not present to allow for safe retries
   const idempotencyKey = req.body.idempotencyKey || `elevenlabs-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
@@ -245,28 +269,47 @@ router.post('/receive-data', async (req, res) => {
 
   // Handle Eleven Labs callback data
   if (isElevenLabsCallback) {
-    const { 
-      callSid, 
-      caller,
-      communication_style, 
-      goals, 
-      values, 
-      professional_goals, 
-      partnership_expectations, 
-      raw_transcript 
-    } = req.body;
-
+    // Extract data, with fallbacks for different field name variations
+    // ElevenLabs might use different field names or capitalization
+    const extractField = (fieldName) => {
+      const possibleKeys = [
+        fieldName,
+        fieldName.toLowerCase(),
+        fieldName.toUpperCase(),
+        fieldName.replace(/_/g, ''),
+        `${fieldName.charAt(0).toUpperCase()}${fieldName.slice(1)}`,
+        fieldName.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join('')
+      ];
+      
+      for (const key of possibleKeys) {
+        if (req.body[key] !== undefined) {
+          return req.body[key];
+        }
+      }
+      return null;
+    };
+    
+    // Extract all possible fields with consistent naming
+    const callSid = extractField('call_sid') || extractField('callSid') || extractField('call_id') || null;
+    const caller = extractField('caller') || extractField('caller_id') || extractField('phone_number') || null;
+    const communicationStyle = extractField('communication_style') || extractField('communicationStyle') || null;
+    const goals = extractField('goals') || null;
+    const values = extractField('values') || null;
+    const professionalGoals = extractField('professional_goals') || extractField('professionalGoals') || goals || null;
+    const partnershipExpectations = extractField('partnership_expectations') || extractField('partnershipExpectations') || null;
+    const rawTranscript = extractField('raw_transcript') || extractField('rawTranscript') || extractField('transcript') || null;
+    
     console.log('=== PROCESSING ELEVENLABS CALLBACK DATA ===');
     console.log('Identifier:', callSid ? `CallSID: ${callSid}` : `Caller: ${caller}`);
     console.log('Complete request body:', JSON.stringify(req.body, null, 2));
     
-    // Detailed logging of key fields
-    console.log('=== INTAKE FIELDS RECEIVED ===');
-    console.log('- communication_style:', typeof communication_style, communication_style || 'NULL');
-    console.log('- professional_goals:', typeof professional_goals, professional_goals || 'NULL');
+    // Detailed logging of extracted fields
+    console.log('=== INTAKE FIELDS PROCESSED ===');
+    console.log('- communication_style:', typeof communicationStyle, communicationStyle || 'NULL');
+    console.log('- professional_goals:', typeof professionalGoals, professionalGoals || 'NULL');
     console.log('- values:', typeof values, values || 'NULL');
-    console.log('- partnership_expectations:', typeof partnership_expectations, partnership_expectations || 'NULL');
-    console.log('- raw_transcript:', raw_transcript ? `${raw_transcript.substring(0, 100)}... (${raw_transcript.length} chars)` : 'NULL');
+    console.log('- partnership_expectations:', typeof partnershipExpectations, partnershipExpectations || 'NULL');
+    console.log('- raw_transcript:', rawTranscript ? `${rawTranscript.substring(0, 100)}... (${rawTranscript.length} chars)` : 'NULL');
     
     try {
       const pool = req.app.get('pool');
@@ -427,11 +470,11 @@ router.post('/receive-data', async (req, res) => {
           [
             contactId, 
             userId, 
-            communication_style || null, 
+            communicationStyle || null, 
             values || null, 
-            professional_goals || null, 
-            partnership_expectations || null, 
-            raw_transcript || null
+            professionalGoals || null, 
+            partnershipExpectations || null, 
+            rawTranscript || null
           ]
         );
         
