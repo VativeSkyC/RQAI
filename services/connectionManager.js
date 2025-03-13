@@ -88,13 +88,13 @@ async function keepAlive() {
 
     try {
       await client.query('SELECT 1');
-      console.log('Keep-alive successful - Server pinged');
+      console.log(`Keep-alive #${pingCounter} successful - Server pinged`);
       return true;
     } finally {
       client.release();
     }
   } catch (error) {
-    console.error('Keep-alive ping failed:', error.message);
+    console.error(`Keep-alive #${pingCounter} ping failed:`, error.message);
     return false;
   }
 }
