@@ -113,6 +113,7 @@ app.get('/receive-data', async (req, res) => {
 
   try {
     // Check if the database is accessible
+    const pool = app.get('pool');
     const client = await pool.connect();
 
     try {
