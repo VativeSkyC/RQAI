@@ -1,0 +1,80 @@
+Token verified, proceeding with userId: 1
+Token verified, proceeding with userId: 1
+Database connection established
+Database connection established
+Error sending SMS: invalid input syntax for type integer: "test"
+NGROK LOG: t=2025-03-13T04:00:34+0000 lvl=info msg="join connections" obj=join id=ecbe2e1e5c02 l=127.0.0.1:5001 r=34.67.146.145:1696
+Personalization webhook triggered: {
+  caller_id: '+15132017748',
+  agent_id: '2p88oZd50AEryCjzugGe',
+  called_number: '+15139517691',
+  call_sid: 'CAfd57270faba66fafb0e2ee3039450f76'
+}
+Found existing contact: { id: 1, first_name: 'Testing', last_name: 'Roberts', user_id: 1 }
+Returning intake questionnaire for contact: Testing
+Keeping alive...
+Keep-alive successful - Server pinged
+Keeping alive...
+Database keep-alive ping successful
+NGROK LOG: t=2025-03-13T04:00:49+0000 lvl=info msg="join connections" obj=join id=16b74d190c82 l=127.0.0.1:5001 r=216.144.248.29:33010
+Received ping from UptimeRobot at 2025-03-13T04:00:49.261Z
+Keeping alive...
+Keep-alive successful - Server pinged
+Keeping alive...
+Keeping alive...
+Keep-alive successful - Server pinged
+Database keep-alive ping successful
+Keeping alive...
+Keep-alive successful - Server pinged
+Keeping alive...
+Database keep-alive ping successful
+NGROK LOG: t=2025-03-13T04:01:53+0000 lvl=info msg="join connections" obj=join id=703ed3fb4134 l=127.0.0.1:5001 r=34.67.146.145:1200
+===========================================
+🔄 RECEIVED DATA FROM ELEVEN LABS
+===========================================
+Headers: {
+  "host": "ai-relationship-agent.ngrok.io",
+  "user-agent": "Python/3.12 aiohttp/3.10.11",
+  "content-length": "1449",
+  "accept": "*/*",
+  "accept-encoding": "gzip, deflate",
+  "content-type": "application/json",
+  "x-forwarded-for": "34.67.146.145",
+  "x-forwarded-host": "ai-relationship-agent.ngrok.io",
+  "x-forwarded-proto": "https"
+}
+Request body: {
+  "communicationStyle": "Direct and concise is preferred method",
+  "partnership_expectations": "Both regular updates and strategic guidance",
+  "raw_transcript": "AI: Hello Testing, Chase asked me to learn more about your professional goals. When you're ready, let me know and we will get started.\nHuman: I'm ready.\nAI: Great! Let's begin with my first question about your communication style. How would you describe your preferred communication style—do you lean toward direct and concise, or collaborative and detailed? Please elaborate.\nHuman: Direct and concise is my preferred method.\nAI: Thank you. For my next question: What are your top professional goals for the next year—growth, stability, or something else?\nHuman: Growth is my top professional goal. I want to make sure that I'm growing my network and my business.\nAI: Thank you for sharing that. Now, what values are most important to you in a professional relationship, such as trust, innovation, or accountability?\nHuman: Trust is my number one.\nAI: I understand trust is paramount to you. For my final question: What do you expect from a professional partnership—regular updates or strategic guidance?\nHuman: Regular updates and actually strategic guidance, both of them would help.",
+  "goals": "Growth focused on expanding network and business",
+  "values": "Trust is the number one value",
+  "professional_goals": "Growth focused on expanding network and business"
+}
+Timestamp: 2025-03-13T04:01:53.285Z
+=== EXTRACTED DATA ===
+{
+  "values": "Trust is the number one value",
+  "professional_goals": "Growth focused on expanding network and business",
+  "partnership_expectations": "Both regular updates and strategic guidance",
+  "raw_transcript": "AI: Hello Testing, Chase asked me to learn more about your professional goals. When you're ready, let me know and we will get started.\nHuman: I'm ready.\nAI: Great! Let's begin with my first question about your communication style. How would you describe your preferred communication style—do you lean toward direct and concise, or collaborative and detailed? Please elaborate.\nHuman: Direct and concise is my preferred method.\nAI: Thank you. For my next question: What are your top professional goals for the next year—growth, stability, or something else?\nHuman: Growth is my top professional goal. I want to make sure that I'm growing my network and my business.\nAI: Thank you for sharing that. Now, what values are most important to you in a professional relationship, such as trust, innovation, or accountability?\nHuman: Trust is my number one.\nAI: I understand trust is paramount to you. For my final question: What do you expect from a professional partnership—regular updates or strategic guidance?\nHuman: Regular updates and actually strategic guidance, both of them would help."
+}
+=== INTAKE FIELDS ANALYSIS ===
+callSid: NOT PROVIDED
+caller: NOT PROVIDED
+communication_style: MISSING
+values: PRESENT
+professional_goals: PRESENT
+partnership_expectations: PRESENT
+raw_transcript: PRESENT (1086 chars)
+Processing with idempotency key: elevenlabs-1741838513285-lbbtcz5te3e
+Keeping alive...
+Keep-alive successful - Server pinged
+Keeping alive...
+Keeping alive...
+Keep-alive successful - Server pinged
+Database keep-alive ping successful
+Keeping alive...
+Keep-alive successful - Server pinged
+Keeping alive...
+Database keep-alive ping successful
