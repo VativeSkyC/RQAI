@@ -1,6 +1,6 @@
 
 const { Pool } = require('pg');
-const retryAsPromised = require('retry-as-promised');
+const retry = require('retry-as-promised');
 
 let pool;
 let pingCounter = 0;
@@ -44,7 +44,7 @@ async function getClient() {
     throw new Error('Pool not initialized');
   }
 
-  return retryAsPromised(async () => {
+  return retry(async () => {
     const client = await pool.connect();
     return client;
   }, {
@@ -73,7 +73,7 @@ async function getClient() {
 async function keepAlive() {
   pingCounter++;
   try {
-    const client = await retryAsPromised(async () => {
+    const client = await retry(async () => {
       return await pool.connect();
     }, {
       max: 3,
