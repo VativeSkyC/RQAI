@@ -150,19 +150,8 @@ router.post('/receive-data', async (req, res) => {
       raw_transcript: raw_transcript ? `${raw_transcript.substring(0, 20)}...` : null
     }));
     
-    const insertResult = await client.query(`
-      INSERT INTO intake_responses (
-        contact_id,
-        user_id,
-        communication_style,
-        values,
-        professional_goals,
-        partnership_expectations,
-        raw_transcript,
-        created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-      RETURNING id
-    `, [
+    // Log the specific values being inserted to catch any issues
+    const params = [
       contactId, 
       user_id, 
       communication_style || null, 
@@ -170,11 +159,59 @@ router.post('/receive-data', async (req, res) => {
       professional_goals || null, 
       partnership_expectations || null, 
       raw_transcript || null
-    ]);
+    ];
+    
+    console.log('⚠️ RAW SQL PARAMS:', JSON.stringify(params));
+    console.log('⚠️ CONTACT ID TYPE:', typeof contactId, 'VALUE:', contactId);
+    console.log('⚠️ USER ID TYPE:', typeof user_id, 'VALUE:', user_id);
+    
+    // Try insertion with explicit casting to ensure correct types
+    try {
+      const insertResult = await client.query(`
+        INSERT INTO intake_responses (
+          contact_id,
+          user_id,
+          communication_style,
+          values,
+          professional_goals,
+          partnership_expectations,
+          raw_transcript,
+          created_at
+        ) VALUES (
+          $1::integer, 
+          $2::integer, 
+          $3, 
+          $4, 
+          $5, 
+          $6, 
+          $7, 
+          NOW()
+        )
+        RETURNING id
+      `, params);
     
     console.log('✅ DATABASE INSERT SUCCESSFUL! New intake response ID:', insertResult.rows[0].id);
-    // Log the full SQL that was executed for debugging
-    console.log('SQL EXECUTED:', `INSERT INTO intake_responses (contact_id, user_id, communication_style, values, professional_goals, partnership_expectations, raw_transcript, created_at) VALUES ('${contactId}', '${user_id}', '${communication_style || null}', '${values || null}', '${professional_goals || null}', '${partnership_expectations || null}', '${raw_transcript ? "text present" : null}', NOW())`);
+      // Log the full SQL that was executed for debugging
+      console.log('SQL EXECUTED:', `INSERT INTO intake_responses (contact_id, user_id, communication_style, values, professional_goals, partnership_expectations, raw_transcript, created_at) VALUES ('${contactId}', '${user_id}', '${communication_style || null}', '${values || null}', '${professional_goals || null}', '${partnership_expectations || null}', '${raw_transcript ? "text present" : null}', NOW())`);
+    } catch (insertError) {
+      console.error('❌ DATABASE INSERT ERROR:', insertError.message);
+      console.error('❌ ERROR DETAIL:', insertError.detail);
+      console.error('❌ ERROR HINT:', insertError.hint);
+      
+      // Try a simpler insert with just the essential fields
+      console.log('🔄 ATTEMPTING FALLBACK INSERT WITH MINIMAL FIELDS');
+      const fallbackResult = await client.query(`
+        INSERT INTO intake_responses (
+          contact_id,
+          user_id,
+          created_at
+        ) VALUES ($1::integer, $2::integer, NOW())
+        RETURNING id
+      `, [contactId, user_id]);
+      
+      console.log('✅ FALLBACK INSERT SUCCESSFUL! New intake response ID:', fallbackResult.rows[0].id);
+      return fallbackResult;
+    }
 
     const newResponseId = insertResult.rows[0].id;
     console.log('===== TRANSACTION DETAILS =====');
