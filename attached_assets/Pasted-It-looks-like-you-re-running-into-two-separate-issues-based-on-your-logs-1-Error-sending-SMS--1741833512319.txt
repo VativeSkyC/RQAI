@@ -1,0 +1,175 @@
+It looks like you’re running into two separate issues based on your logs:
+
+1. **Error sending SMS: invalid input syntax for type integer: "test"**  
+2. **Initial PostgreSQL connection error: retry is not a function**
+
+Below are some troubleshooting steps and likely fixes for each.
+
+---
+
+## 1. Invalid input syntax for type integer: "test"
+
+This error usually means you’re attempting to insert or update a PostgreSQL column that is of type `integer` (or similar numeric type), but you’re passing in the string `"test"` instead of a valid integer. Common scenarios include:
+
+- A form field that should contain a numeric ID but contains text instead.
+- A parameter bound to a query that expects a number, but you passed a string.
+
+**How to fix:**  
+- Double-check the SQL statement or ORM call where you send `"test"`. Make sure to convert the value to an integer (or pass the correct integer) before saving.  
+- For example, if you’re expecting `userId` to be numeric, make sure it is actually a number (e.g., `parseInt()` in JavaScript) and not a string.
+
+---
+
+## 2. “retry is not a function” with `retry-as-promised`
+
+In your code, you import and use `retry-as-promised` like this:
+
+```js
+const retry = require('retry-as-promised');
+
+// ...
+return retry(async () => {
+  const client = await pool.connect();
+  return client;
+}, {
+  // retry options...
+});
+```
+
+Yet you’re seeing `Initial PostgreSQL connection error: retry is not a function`. Common causes:
+
+1. **`retry-as-promised` is not actually installed or not in your `node_modules`.**  
+   - Run `npm install retry-as-promised` (or `yarn add retry-as-promised`) to ensure it’s available.
+   - Check that your `package.json` and `node_modules` are in sync.
+
+2. **Version or named exports mismatch.** Some older versions or type definitions can cause confusion.  
+   - For the current version, the simplest approach is to **directly import** the main function as `retryAsPromised`:
+     ```js
+     const { retryAsPromised } = require('retry-as-promised');
+     
+     return retryAsPromised(async () => {
+       const client = await pool.connect();
+       return client;
+     }, {
+       // retry options...
+     });
+     ```
+   - Or, if you want to keep calling the function `retry`, do:
+     ```js
+     const retryAsPromised = require('retry-as-promised').retryAsPromised;
+     
+     // alias it
+     const retry = retryAsPromised;
+
+     // now call `retry(...)`
+     return retry(async () => {
+       const client = await pool.connect();
+       return client;
+     }, {
+       // retry options...
+     });
+     ```
+   - Or, if your version of `retry-as-promised` does indeed export the function directly (older style), then
+     ```js
+     const retry = require('retry-as-promised');
+     
+     return retry(async () => {
+       const client = await pool.connect();
+       return client;
+     }, {
+       // retry options...
+     });
+     ```
+     should work **provided** you have the matching version installed.
+
+Essentially, **make sure your import and usage lines up with the version of `retry-as-promised` you’re using** and that you have indeed installed the library.
+
+---
+
+## Putting it all together
+
+### A. Make sure `retry-as-promised` is installed
+
+```bash
+npm install retry-as-promised
+# or
+yarn add retry-as-promised
+```
+
+### B. Adjust your import and usage if needed
+
+If `retry(...)` fails with “not a function,” change it to `retryAsPromised(...)`, for example:
+
+```js
+const { Pool } = require('pg');
+const { retryAsPromised } = require('retry-as-promised');
+
+let pool;
+
+function initialize(connectionString) {
+  if (!pool) {
+    if (!connectionString) {
+      throw new Error('Connection string is required');
+    }
+
+    pool = new Pool({
+      connectionString,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    });
+
+    console.log('Created new database connection pool');
+  }
+  return pool;
+}
+
+async function getClient() {
+  if (!pool) {
+    throw new Error('Pool not initialized');
+  }
+
+  return retryAsPromised(async () => {
+    const client = await pool.connect();
+    return client;
+  }, {
+    max: 5,
+    timeout: 10000,
+    backoffBase: 1000,
+    backoffExponent: 1.5,
+    name: 'pg-connect',
+    match: [
+      /Connection terminated/,
+      /Connection refused/,
+      /timeout exceeded/,
+      /ECONNREFUSED/,
+      /ENOTFOUND/
+    ],
+    report: (message, attempt, err) => {
+      console.log(`Database connection attempt ${attempt}: ${err.message}`);
+    }
+  });
+}
+```
+
+### C. Fix your “invalid input syntax” for integers
+
+Wherever the `"test"` value is being passed into your database as an integer, make sure to use a real integer. For instance:
+
+```js
+await client.query('INSERT INTO sms_logs (some_integer_column) VALUES ($1)', [42]);
+```
+instead of
+```js
+await client.query('INSERT INTO sms_logs (some_integer_column) VALUES ($1)', ['test']);
+```
+
+---
+
+## Summary
+
+- **Install** or **verify** you have installed `retry-as-promised` correctly.
+- **Update** the import/require usage to match your `retry-as-promised` version.
+- **Pass** the correct integer values instead of strings like `"test"` for integer fields in your SQL queries.
+
+With these steps, you should be able to resolve both the “invalid input syntax for integer” and the “retry is not a function” errors. If you still see issues, double-check the environment (e.g., Docker, deployment context) to confirm the correct packages are installed and the code is picking up the right modules.
