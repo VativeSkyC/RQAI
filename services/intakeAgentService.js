@@ -71,7 +71,15 @@ async function updateIntakeWithParsedData(pool, intakeResponseId, parsedData) {
   try {
     await client.query('BEGIN');
 
-    // Update the intake_responses record with the parsed fields
+    // Normalize field names from the API response (handle both camelCase and snake_case)
+    const normalizedData = {
+      communication_style: parsedData.communication_style || parsedData.communicationStyle || parsedData.communication_Style || null,
+      professional_goals: parsedData.professional_goals || parsedData.professionalGoals || null,
+      values: parsedData.values || null,
+      partnership_expectations: parsedData.partnership_expectations || parsedData.partnershipExpectations || null
+    };
+
+    // Update the intake_responses record with the normalized fields
     const result = await client.query(`
       UPDATE intake_responses 
       SET 
@@ -82,10 +90,10 @@ async function updateIntakeWithParsedData(pool, intakeResponseId, parsedData) {
       WHERE id = $5
       RETURNING *
     `, [
-      parsedData.communication_style || null,
-      parsedData.professional_goals || null,
-      parsedData.values || null, 
-      parsedData.partnership_expectations || null,
+      normalizedData.communication_style,
+      normalizedData.professional_goals,
+      normalizedData.values, 
+      normalizedData.partnership_expectations,
       intakeResponseId
     ]);
 
