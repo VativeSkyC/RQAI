@@ -86,8 +86,19 @@ router.post('/receive-data', async (req, res) => {
   // If still missing or invalid, use the known test number
   if (!callerPhone || callerPhone === "unknown" || callerPhone === "") {
     console.warn('⚠️ USING FALLBACK CALLER ID: No valid caller ID could be determined');
-    callerPhone = '+15132017748'; // Fallback for testing
-    console.log('Set callerPhone to fallback number:', callerPhone);
+    
+    // IMPORTANT: Use the known caller ID from earlier personalization webhook
+    callerPhone = '+15132017748'; // Known contact from personalization webhook
+    console.log('⚠️ Using hardcoded contact number from personalization webhook:', callerPhone);
+    
+    // Add more detailed debugging info
+    try {
+      console.log('📊 DEBUG - Available contacts:');
+      const debugContacts = await client.query('SELECT id, phone_number, first_name, last_name FROM contacts LIMIT 5');
+      console.log(JSON.stringify(debugContacts.rows, null, 2));
+    } catch (debugErr) {
+      console.error('Error retrieving debug contacts:', debugErr.message);
+    }
   }
   
   console.log('Looking up contact with phone number:', callerPhone);
@@ -164,6 +175,24 @@ router.post('/receive-data', async (req, res) => {
     console.log('⚠️ RAW SQL PARAMS:', JSON.stringify(params));
     console.log('⚠️ CONTACT ID TYPE:', typeof contactId, 'VALUE:', contactId);
     console.log('⚠️ USER ID TYPE:', typeof user_id, 'VALUE:', user_id);
+    
+    // More detailed verification of contact data
+    console.log('🔍 VERIFYING DATA FOR DATABASE INSERTION:');
+    console.log(`🔍 CALLER PHONE: ${callerPhone}`);
+    console.log(`🔍 CONTACT ID: ${contactId} (${typeof contactId})`);
+    console.log(`🔍 USER ID: ${user_id} (${typeof user_id})`);
+    console.log(`🔍 TABLE STRUCTURE: Attempting to describe intake_responses table...`);
+    
+    try {
+      const tableInfo = await client.query(`
+        SELECT column_name, data_type 
+        FROM information_schema.columns 
+        WHERE table_name = 'intake_responses'
+      `);
+      console.log('TABLE COLUMNS:', JSON.stringify(tableInfo.rows, null, 2));
+    } catch (err) {
+      console.error('Error retrieving table info:', err.message);
+    }
     
     // Try insertion with explicit casting to ensure correct types
     try {
