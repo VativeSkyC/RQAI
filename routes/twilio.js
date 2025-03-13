@@ -1,4 +1,3 @@
-
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
@@ -15,19 +14,19 @@ router.post('/voice', async (req, res) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      
+
       // Store in temp_calls for immediate use
       await client.query(
         'INSERT INTO temp_calls (call_sid, phone_number, created_at) VALUES ($1, $2, NOW())',
         [CallSid, From]
       );
-      
+
       // Also store in permanent call_log for debugging and recovery
       await client.query(
         'INSERT INTO call_log (call_sid, phone_number, created_at) VALUES ($1, $2, NOW()) ON CONFLICT (call_sid) DO NOTHING',
         [CallSid, From]
       );
-      
+
       await client.query('COMMIT');
       console.log(`Call from ${From} with SID ${CallSid} successfully logged`);
     } catch (error) {
@@ -85,7 +84,7 @@ router.post('/twilio-personalization', async (req, res) => {
     const client = await pool.connect();
     let existingContact;
     const userName = "Chase"; // Hardcoded name as specified in the requirements
-    
+
     try {
       const findContact = await client.query(`
         SELECT id, first_name, last_name, user_id
@@ -216,7 +215,7 @@ router.post('/receive-data', async (req, res) => {
   console.log('Headers:', JSON.stringify(req.headers, null, 2));
   console.log('Request body:', JSON.stringify(req.body, null, 2));
   console.log('Timestamp:', new Date().toISOString());
-  
+
   // Extract data from all possible locations in the response
   // ElevenLabs might nest the data in different ways
   let extractedData = {
@@ -252,10 +251,10 @@ router.post('/receive-data', async (req, res) => {
       if (!extractedData.raw_transcript) extractedData.raw_transcript = dataObj.raw_transcript || dataObj.transcript;
     }
   }
-  
+
   console.log('=== EXTRACTED DATA ===');
   console.log(JSON.stringify(extractedData, null, 2));
-  
+
   // Destructure the extracted data for use in the rest of the function
   const { 
     callSid, 
@@ -266,7 +265,7 @@ router.post('/receive-data', async (req, res) => {
     partnership_expectations, 
     raw_transcript 
   } = extractedData;
-  
+
   console.log('=== INTAKE FIELDS ANALYSIS ===');
   console.log('callSid:', callSid || 'NOT PROVIDED');
   console.log('caller:', caller || 'NOT PROVIDED');
@@ -275,7 +274,7 @@ router.post('/receive-data', async (req, res) => {
   console.log('professional_goals:', professional_goals ? 'PRESENT' : 'MISSING');
   console.log('partnership_expectations:', partnership_expectations ? 'PRESENT' : 'MISSING');
   console.log('raw_transcript:', raw_transcript ? `PRESENT (${raw_transcript.length} chars)` : 'MISSING');
-  
+
   // Add idempotency key if not present to allow for safe retries
   const idempotencyKey = req.body.idempotencyKey || `elevenlabs-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
   console.log(`Processing with idempotency key: ${idempotencyKey}`);
@@ -319,7 +318,7 @@ router.post('/receive-data', async (req, res) => {
         `${fieldName.charAt(0).toUpperCase()}${fieldName.slice(1)}`,
         fieldName.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join('')
       ];
-      
+
       for (const key of possibleKeys) {
         if (req.body[key] !== undefined) {
           return req.body[key];
@@ -327,7 +326,7 @@ router.post('/receive-data', async (req, res) => {
       }
       return null;
     };
-    
+
     // Extract all possible fields with consistent naming
     const callSid = extractField('call_sid') || extractField('callSid') || extractField('call_id') || null;
     const caller = extractField('caller') || extractField('caller_id') || extractField('phone_number') || null;
@@ -337,11 +336,11 @@ router.post('/receive-data', async (req, res) => {
     const professionalGoals = extractField('professional_goals') || extractField('professionalGoals') || goals || null;
     const partnershipExpectations = extractField('partnership_expectations') || extractField('partnershipExpectations') || null;
     const rawTranscript = extractField('raw_transcript') || extractField('rawTranscript') || extractField('transcript') || null;
-    
+
     console.log('=== PROCESSING ELEVENLABS CALLBACK DATA ===');
     console.log('Identifier:', callSid ? `CallSID: ${callSid}` : `Caller: ${caller}`);
     console.log('Complete request body:', JSON.stringify(req.body, null, 2));
-    
+
     // Detailed logging of extracted fields
     console.log('=== INTAKE FIELDS PROCESSED ===');
     console.log('- communication_style:', typeof communicationStyle, communicationStyle || 'NULL');
@@ -349,14 +348,14 @@ router.post('/receive-data', async (req, res) => {
     console.log('- values:', typeof values, values || 'NULL');
     console.log('- partnership_expectations:', typeof partnershipExpectations, partnershipExpectations || 'NULL');
     console.log('- raw_transcript:', rawTranscript ? `${rawTranscript.substring(0, 100)}... (${rawTranscript.length} chars)` : 'NULL');
-    
+
     try {
       const pool = req.app.get('pool');
       const client = await pool.connect();
-      
+
       try {
         console.log('Starting database transaction (BEGIN)');
-        
+
         // Add additional error handling for database operations
         try {
           await client.query('BEGIN');
@@ -367,16 +366,17 @@ router.post('/receive-data', async (req, res) => {
           }
           throw dbError;
         }
-        
+
         let phoneNumber = null;
-        
-        // If we have a caller phone number directly, use it
-        if (caller) {
+
+        // If we have a caller phone number directly, use it - check multiple possible field names
+        const caller_from_request = caller || req.body.caller_id || req.body.callerId || req.body.caller;
+        if (caller_from_request) {
           // Normalize phone number by removing all non-numeric characters except leading +
-          const normalizedCaller = caller.replace(/^(\+)/, 'PLUS').replace(/[^0-9]/g, '').replace('PLUS', '+');
+          const normalizedCaller = caller_from_request.replace(/^(\+)/, 'PLUS').replace(/[^0-9]/g, '').replace('PLUS', '+');
           phoneNumber = normalizedCaller;
-          console.log(`Using direct caller phone number: Original=${caller}, Normalized=${phoneNumber}`);
-          
+          console.log(`Using direct caller phone number: Original=${caller_from_request}, Normalized=${phoneNumber}`);
+
           // Create a record in call_log for reference
           await client.query(
             'INSERT INTO call_log (call_sid, phone_number, status, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (call_sid) DO NOTHING',
@@ -386,30 +386,30 @@ router.post('/receive-data', async (req, res) => {
         // Otherwise try to find by callSid as before
         else if (callSid) {
           console.log('Looking up phone number by callSid:', callSid);
-          
+
           // First try to match call from temp_calls
           let callResult = await client.query('SELECT phone_number FROM temp_calls WHERE call_sid = $1', [callSid]);
-          
+
           // If not found in temp_calls, try the call_log table as fallback
           if (callResult.rows.length === 0) {
             console.log('Call not found in temp_calls, checking call_log fallback...');
-            
+
             // Perform case-insensitive search to handle potential formatting issues
             callResult = await client.query('SELECT phone_number FROM call_log WHERE LOWER(call_sid) = LOWER($1)', [callSid]);
-            
+
             if (callResult.rows.length === 0) {
               console.log('Call not found in logs with exact match, trying partial match...');
-              
+
               // Try partial match as fallback (in case SID format changed)
               callResult = await client.query("SELECT phone_number FROM call_log WHERE call_sid LIKE $1", [`%${callSid.slice(-8)}%`]);
-              
+
               if (callResult.rows.length === 0) {
                 // If we receive a phone_number in the payload, use that
                 if (req.body.phone_number) {
                   const normalizedPhone = req.body.phone_number.replace(/^(\+)/, 'PLUS').replace(/[^0-9]/g, '').replace('PLUS', '+');
                   console.log(`Using phone_number from payload: Original=${req.body.phone_number}, Normalized=${normalizedPhone}`);
                   phoneNumber = normalizedPhone;
-                  
+
                   // Create a record in call_log for this session
                   await client.query(
                     'INSERT INTO call_log (call_sid, phone_number, status, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (call_sid) DO NOTHING',
@@ -447,16 +447,16 @@ router.post('/receive-data', async (req, res) => {
 
         // Normalize phone number for lookup
         const normalizedPhone = phoneNumber.replace(/^(\+)/, 'PLUS').replace(/[^0-9]/g, '').replace('PLUS', '+');
-        
+
         // Try to find contact with exact match first
         console.log(`Looking for contact with exact phone number: ${normalizedPhone}`);
         let contactResult = await client.query('SELECT id, user_id FROM contacts WHERE phone_number = $1', [normalizedPhone]);
-        
+
         // If not found with exact match, try with just the digits (removing +)
         if (contactResult.rows.length === 0) {
           const digitsOnly = normalizedPhone.replace(/^\+/, '');
           console.log(`Contact not found with exact match, trying with digits only: ${digitsOnly}`);
-          
+
           // Try to match with or without country code
           contactResult = await client.query(
             'SELECT id, user_id FROM contacts WHERE ' +
@@ -508,7 +508,7 @@ router.post('/receive-data', async (req, res) => {
         console.log('- professional_goals:', professionalGoals || null);
         console.log('- partnership_expectations:', partnershipExpectations || null);
         console.log('- raw_transcript:', rawTranscript ? 'Present' : 'Null');
-        
+
         try {
           const insertResult = await client.query(
             `INSERT INTO intake_responses (
@@ -533,7 +533,7 @@ router.post('/receive-data', async (req, res) => {
           console.error('INSERT HINT:', insertError.hint);
           throw insertError; // Re-throw for the outer catch block
         }
-        
+
         console.log(`INSERT successful. New intake_responses row ID: ${insertResult.rows[0]?.id || 'unknown'}`);
 
         // Update call_log to mark as processed if we have a callSid
@@ -561,7 +561,7 @@ router.post('/receive-data', async (req, res) => {
             throw commitError;
           }
         }
-        
+
         return res.status(200).json({ 
           message: 'Data stored successfully',
           contact_id: contactId,
@@ -643,7 +643,7 @@ router.get('/debug/contacts/:phoneNumber', async (req, res) => {
   try {
     const phoneNumber = req.params.phoneNumber;
     console.log(`Looking up contact with phone number: ${phoneNumber}`);
-    
+
     const pool = req.app.get('pool');
     const client = await pool.connect();
     try {
@@ -651,14 +651,14 @@ router.get('/debug/contacts/:phoneNumber', async (req, res) => {
         'SELECT id, first_name, last_name, phone_number, user_id, created_at FROM contacts WHERE phone_number = $1',
         [phoneNumber]
       );
-      
+
       if (contactResult.rows.length === 0) {
         return res.status(404).json({ 
           error: 'No contact found',
           message: 'No contact found with this phone number'
         });
       }
-      
+
       return res.json({
         success: true,
         contact: contactResult.rows[0],
