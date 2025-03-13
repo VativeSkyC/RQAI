@@ -157,20 +157,94 @@ async function processIntakeData(data) {
     const idempotencyKey = `elevenlabs-${timestamp}-${randomPart}`;
     console.log('Processing with idempotency key:', idempotencyKey);
 
-    // Here you would store the data in your database
-    // For now, let's return a success response
-    return {
-      status: 'received',
-      idempotency_key: idempotencyKey,
-      fields_received: {
-        caller_id: !!data.caller,
-        communication_style: !!data.communication_style,
-        values: !!data.values,
-        professional_goals: !!data.professional_goals,
-        partnership_expectations: !!data.partnership_expectations,
-        raw_transcript: !!data.raw_transcript
+    // Get database connection from global app
+    const pool = global.app.get('pool');
+    if (!pool) {
+      throw new Error('Database connection not available');
+    }
+
+    const client = await pool.connect();
+    try {
+      // Begin transaction
+      await client.query('BEGIN');
+
+      // First, check if we already have a record with this phone number in intake_responses
+      const checkExisting = await client.query(
+        'SELECT id FROM intake_responses WHERE phone_number = $1',
+        [data.caller]
+      );
+
+      let intakeId;
+      if (checkExisting.rows.length > 0) {
+        // Update existing record
+        intakeId = checkExisting.rows[0].id;
+        console.log(`Updating existing intake record #${intakeId} for phone ${data.caller}`);
+        
+        await client.query(`
+          UPDATE intake_responses
+          SET 
+            communication_style = $1,
+            values = $2,
+            professional_goals = $3,
+            partnership_expectations = $4,
+            raw_transcript = $5,
+            updated_at = NOW()
+          WHERE id = $6
+        `, [
+          data.communication_style,
+          data.values,
+          data.professional_goals,
+          data.partnership_expectations,
+          data.raw_transcript,
+          intakeId
+        ]);
+      } else {
+        // Insert new record
+        console.log(`Creating new intake record for phone ${data.caller}`);
+        
+        const result = await client.query(`
+          INSERT INTO intake_responses 
+          (phone_number, communication_style, values, professional_goals, 
+           partnership_expectations, raw_transcript, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+          RETURNING id
+        `, [
+          data.caller,
+          data.communication_style,
+          data.values,
+          data.professional_goals,
+          data.partnership_expectations,
+          data.raw_transcript
+        ]);
+        
+        intakeId = result.rows[0].id;
       }
-    };
+
+      // Commit transaction
+      await client.query('COMMIT');
+      
+      console.log(`Successfully saved intake data with ID: ${intakeId}`);
+
+      return {
+        status: 'saved',
+        idempotency_key: idempotencyKey,
+        intake_id: intakeId,
+        fields_received: {
+          caller_id: !!data.caller,
+          communication_style: !!data.communication_style,
+          values: !!data.values,
+          professional_goals: !!data.professional_goals,
+          partnership_expectations: !!data.partnership_expectations,
+          raw_transcript: !!data.raw_transcript
+        }
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Database error saving intake data:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
   } catch (error) {
     console.error('Error processing intake data:', error);
     throw error;
