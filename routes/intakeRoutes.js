@@ -32,6 +32,19 @@ router.post('/receive-data', async (req, res) => {
   console.log('Received caller_id in request:', callerPhone);
   console.log('Received call_sid in request:', callSid);
   
+  // Get the pool first
+  const pool = req.app.get('pool');
+  if (!pool) {
+    console.error('❌ ERROR: Database pool not found in request app');
+    return res.status(500).json({ 
+      error: 'Database configuration error', 
+      message: 'Database pool not found'
+    });
+  }
+  
+  // Get a client from the pool early
+  const client = await pool.connect();
+  
   // If callerPhone is undefined, "unknown", or otherwise invalid, use the fallback
   if (!callerPhone || callerPhone === "unknown" || callerPhone === "") {
     console.log('Received invalid caller_id in request:', callerPhone);
@@ -78,9 +91,6 @@ router.post('/receive-data', async (req, res) => {
   }
   
   console.log('Looking up contact with phone number:', callerPhone);
-  
-  const pool = req.app.get('pool');
-  const client = await pool.connect();
   
   try {
     await client.query('BEGIN');
@@ -129,6 +139,17 @@ router.post('/receive-data', async (req, res) => {
     console.log('🔄 ATTEMPTING DATABASE INSERT with phone:', callerPhone);
     console.log('🔄 Contact ID:', contactId, 'User ID:', user_id);
     
+    // Add debug logging for SQL values
+    console.log('EXECUTING SQL with params:', JSON.stringify({
+      contactId,
+      user_id,
+      communication_style: communication_style || null,
+      values: values || null,
+      professional_goals: professional_goals || null,
+      partnership_expectations: partnership_expectations || null,
+      raw_transcript: raw_transcript ? `${raw_transcript.substring(0, 20)}...` : null
+    }));
+    
     const insertResult = await client.query(`
       INSERT INTO intake_responses (
         contact_id,
@@ -152,6 +173,8 @@ router.post('/receive-data', async (req, res) => {
     ]);
     
     console.log('✅ DATABASE INSERT SUCCESSFUL! New intake response ID:', insertResult.rows[0].id);
+    // Log the full SQL that was executed for debugging
+    console.log('SQL EXECUTED:', `INSERT INTO intake_responses (contact_id, user_id, communication_style, values, professional_goals, partnership_expectations, raw_transcript, created_at) VALUES ('${contactId}', '${user_id}', '${communication_style || null}', '${values || null}', '${professional_goals || null}', '${partnership_expectations || null}', '${raw_transcript ? "text present" : null}', NOW())`);
 
     const newResponseId = insertResult.rows[0].id;
     console.log('===== TRANSACTION DETAILS =====');
