@@ -1,18 +1,16 @@
-
 const express = require('express');
 const router = express.Router();
 const intakeAgentService = require('../services/intakeAgentService');
 const authMiddleware = require('../middleware/auth');
 
-// Special middleware for ElevenLabs - allow requests with API secret or with JWT
+// Special middleware for ElevenLabs - allow requests with webhook data
 const elevenlabsAuth = (req, res, next) => {
-  // Check if it's an ElevenLabs webhook (has expected fields)
-  if (req.body.communication_style || req.body.raw_transcript || req.body.caller_id) {
-    // This appears to be from ElevenLabs, allow it
+  // Check if it has the specific fields that would indicate it's from ElevenLabs
+  if (req.body && (req.body.caller_id || req.body.raw_transcript)) {
     console.log('ElevenLabs webhook detected, bypassing authentication');
     return next();
   }
-  
+
   // Otherwise, apply regular JWT auth
   authMiddleware.verifyToken(req, res, next);
 };
@@ -25,314 +23,41 @@ router.post('/receive-data', elevenlabsAuth, async (req, res) => {
   console.log('Headers:', JSON.stringify(req.headers, null, 2));
   console.log('Request body:', JSON.stringify(req.body, null, 2));
 
-  // Extract fields from the request - prefer communication style fields sent directly
-  const communication_style = req.body.communication_style;
-  const values = req.body.values;
-  const professional_goals = req.body.professional_goals;
-  const partnership_expectations = req.body.partnership_expectations;
-  const raw_transcript = req.body.raw_transcript;
+  // Log the timestamp for debugging purposes
+  console.log('Timestamp:', new Date().toISOString());
 
-  console.log('=== INTAKE FIELDS ANALYSIS ===');
-  console.log('communication_style:', communication_style ? 'PRESENT' : 'MISSING');
-  console.log('values:', values ? 'PRESENT' : 'MISSING');
-  console.log('professional_goals:', professional_goals ? 'PRESENT' : 'MISSING');
-  console.log('partnership_expectations:', partnership_expectations ? 'PRESENT' : 'MISSING');
-  console.log('raw_transcript:', raw_transcript ? `PRESENT (${raw_transcript.length} chars)` : 'MISSING');
-
-  // Get caller phone number from the request or lookup in temp_calls table
-  let callerPhone = req.body.caller_id || req.body.caller || req.body.phone_number;
-  const callSid = req.body.call_sid || req.body.callSid;
-  
-  console.log('Received caller_id in request:', callerPhone);
-  console.log('Received call_sid in request:', callSid);
-  
-  // Get the pool first
-  const pool = req.app.get('pool');
-  if (!pool) {
-    console.error('❌ ERROR: Database pool not found in request app');
-    return res.status(500).json({ 
-      error: 'Database configuration error', 
-      message: 'Database pool not found'
-    });
-  }
-  
-  // Get a client from the pool early
-  const client = await pool.connect();
-  
-  // If callerPhone is undefined, "unknown", or otherwise invalid, use the fallback
-  if (!callerPhone || callerPhone === "unknown" || callerPhone === "") {
-    console.log('Received invalid caller_id in request:', callerPhone);
-    console.log('Using fallback phone number from personalization webhook');
-    
-    // If we have a call_sid, try to look it up in temp_calls or call_log
-    if (callSid) {
-      console.log('Looking up caller phone from call_sid in temp_calls:', callSid);
-      
-      try {
-        // Try to find the phone number in temp_calls table using the call_sid
-        const callResult = await client.query(
-          'SELECT phone_number FROM temp_calls WHERE call_sid = $1',
-          [callSid]
-        );
-        
-        if (callResult.rows.length > 0) {
-          callerPhone = callResult.rows[0].phone_number;
-          console.log('Retrieved phone number from temp_calls:', callerPhone);
-        } else {
-          // Fallback to call_log if not found in temp_calls
-          console.log('Call not found in temp_calls, checking call_log...');
-          const logResult = await client.query(
-            'SELECT phone_number FROM call_log WHERE call_sid = $1',
-            [callSid]
-          );
-          
-          if (logResult.rows.length > 0) {
-            callerPhone = logResult.rows[0].phone_number;
-            console.log('Retrieved phone number from call_log:', callerPhone);
-          }
-        }
-      } catch (lookupError) {
-        console.error('Error looking up call data:', lookupError.message);
-      }
-    }
-  }
-  
-  // If still missing or invalid, use the known test number
-  if (!callerPhone || callerPhone === "unknown" || callerPhone === "") {
-    console.warn('⚠️ USING FALLBACK CALLER ID: No valid caller ID could be determined');
-    
-    // IMPORTANT: Use the known caller ID from earlier personalization webhook
-    callerPhone = '+15132017748'; // Known contact from personalization webhook
-    console.log('⚠️ Using hardcoded contact number from personalization webhook:', callerPhone);
-    
-    // Add more detailed debugging info
-    try {
-      console.log('📊 DEBUG - Available contacts:');
-      const debugContacts = await client.query('SELECT id, phone_number, first_name, last_name FROM contacts LIMIT 5');
-      console.log(JSON.stringify(debugContacts.rows, null, 2));
-    } catch (debugErr) {
-      console.error('Error retrieving debug contacts:', debugErr.message);
-    }
-  }
-  
-  console.log('Looking up contact with phone number:', callerPhone);
-  
   try {
-    await client.query('BEGIN');
-    console.log('=== STARTING DATABASE OPERATIONS ===');
+    // Extract the key data from the request
+    const { caller_id, communication_style, values, professional_goals, partnership_expectations, raw_transcript } = req.body;
 
-    // Find the contact using the caller_id that was previously validated in the personalization webhook
-    const contactResult = await client.query(
-      'SELECT id, user_id FROM contacts WHERE phone_number = $1 LIMIT 1',
-      [callerPhone]
-    );
-    
-    if (contactResult.rows.length === 0) {
-      console.error(`❌ ERROR: No contact found with phone number: ${callerPhone}`);
-      console.log('Attempting to list all available contacts to debug:');
-      
-      try {
-        const allContacts = await client.query('SELECT id, phone_number, first_name, last_name FROM contacts LIMIT 10');
-        console.log('Available contacts:', JSON.stringify(allContacts.rows, null, 2));
-      } catch (listError) {
-        console.error('Error listing contacts:', listError.message);
-      }
-      
-      await client.query('ROLLBACK');
-      return res.status(404).json({ 
-        error: 'Contact not found', 
-        message: `No contact found with phone number: ${callerPhone}`,
-        phone_attempted: callerPhone
-      });
-    }
-    
-    console.log(`✅ Successfully found contact with phone number: ${callerPhone}`);
-    
-    const { id: contactId, user_id } = contactResult.rows[0];
-    console.log(`Found contact ID: ${contactId} for phone: ${callerPhone}`);
+    const extractedData = {
+      caller: caller_id,
+      communication_style,
+      values,
+      professional_goals,
+      partnership_expectations,
+      raw_transcript
+    };
 
-    // Step B: Insert a new record in intake_responses with all available fields
-    console.log('=== INSERTING INTO INTAKE_RESPONSES ===');
-    console.log('- contact_id:', contactId);
-    console.log('- user_id:', user_id);
-    console.log('- communication_style:', communication_style || 'NULL');
-    console.log('- values:', values || 'NULL');
-    console.log('- professional_goals:', professional_goals || 'NULL');
-    console.log('- partnership_expectations:', partnership_expectations || 'NULL');
-    console.log('- raw_transcript:', raw_transcript ? 'PRESENT' : 'NULL');
-    
-    console.log('🔄 ATTEMPTING DATABASE INSERT with phone:', callerPhone);
-    console.log('🔄 Contact ID:', contactId, 'User ID:', user_id);
-    
-    // Add debug logging for SQL values
-    console.log('EXECUTING SQL with params:', JSON.stringify({
-      contactId,
-      user_id,
-      communication_style: communication_style || null,
-      values: values || null,
-      professional_goals: professional_goals || null,
-      partnership_expectations: partnership_expectations || null,
-      raw_transcript: raw_transcript ? `${raw_transcript.substring(0, 20)}...` : null
-    }));
-    
-    // Log the specific values being inserted to catch any issues
-    const params = [
-      contactId, 
-      user_id, 
-      communication_style || null, 
-      values || null, 
-      professional_goals || null, 
-      partnership_expectations || null, 
-      raw_transcript || null
-    ];
-    
-    console.log('⚠️ RAW SQL PARAMS:', JSON.stringify(params));
-    console.log('⚠️ CONTACT ID TYPE:', typeof contactId, 'VALUE:', contactId);
-    console.log('⚠️ USER ID TYPE:', typeof user_id, 'VALUE:', user_id);
-    
-    // More detailed verification of contact data
-    console.log('🔍 VERIFYING DATA FOR DATABASE INSERTION:');
-    console.log(`🔍 CALLER PHONE: ${callerPhone}`);
-    console.log(`🔍 CONTACT ID: ${contactId} (${typeof contactId})`);
-    console.log(`🔍 USER ID: ${user_id} (${typeof user_id})`);
-    console.log(`🔍 TABLE STRUCTURE: Attempting to describe intake_responses table...`);
-    
-    try {
-      const tableInfo = await client.query(`
-        SELECT column_name, data_type 
-        FROM information_schema.columns 
-        WHERE table_name = 'intake_responses'
-      `);
-      console.log('TABLE COLUMNS:', JSON.stringify(tableInfo.rows, null, 2));
-    } catch (err) {
-      console.error('Error retrieving table info:', err.message);
-    }
-    
-    // Try insertion with explicit casting to ensure correct types
-    try {
-      const insertResult = await client.query(`
-        INSERT INTO intake_responses (
-          contact_id,
-          user_id,
-          communication_style,
-          values,
-          professional_goals,
-          partnership_expectations,
-          raw_transcript,
-          created_at
-        ) VALUES (
-          $1::integer, 
-          $2::integer, 
-          $3, 
-          $4, 
-          $5, 
-          $6, 
-          $7, 
-          NOW()
-        )
-        RETURNING id
-      `, params);
-    
-    console.log('✅ DATABASE INSERT SUCCESSFUL! New intake response ID:', insertResult.rows[0].id);
-      // Log the full SQL that was executed for debugging
-      console.log('SQL EXECUTED:', `INSERT INTO intake_responses (contact_id, user_id, communication_style, values, professional_goals, partnership_expectations, raw_transcript, created_at) VALUES ('${contactId}', '${user_id}', '${communication_style || null}', '${values || null}', '${professional_goals || null}', '${partnership_expectations || null}', '${raw_transcript ? "text present" : null}', NOW())`);
-    } catch (insertError) {
-      console.error('❌ DATABASE INSERT ERROR:', insertError.message);
-      console.error('❌ ERROR DETAIL:', insertError.detail);
-      console.error('❌ ERROR HINT:', insertError.hint);
-      
-      // Try a simpler insert with just the essential fields
-      console.log('🔄 ATTEMPTING FALLBACK INSERT WITH MINIMAL FIELDS');
-      const fallbackResult = await client.query(`
-        INSERT INTO intake_responses (
-          contact_id,
-          user_id,
-          created_at
-        ) VALUES ($1::integer, $2::integer, NOW())
-        RETURNING id
-      `, [contactId, user_id]);
-      
-      console.log('✅ FALLBACK INSERT SUCCESSFUL! New intake response ID:', fallbackResult.rows[0].id);
-      return fallbackResult;
-    }
+    console.log('=== EXTRACTED DATA ===');
+    console.log(JSON.stringify(extractedData, null, 2));
 
-    const newResponseId = insertResult.rows[0].id;
-    console.log('===== TRANSACTION DETAILS =====');
-    console.log('INSERT STATEMENT EXECUTED:', `
-      INSERT INTO intake_responses (
-        contact_id, user_id, communication_style, values, 
-        professional_goals, partnership_expectations, raw_transcript, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-      RETURNING id`);
-    console.log('PARAMETERS:', [
-      contactId, 
-      user_id, 
-      communication_style || null, 
-      values || null, 
-      professional_goals || null, 
-      partnership_expectations || null, 
-      raw_transcript ? `${raw_transcript.length} chars` : null
-    ]);
-    
-    await client.query('COMMIT');
-    console.log('TRANSACTION COMMITTED SUCCESSFULLY ✅');
+    // Pass the data to the intake service for processing
+    const result = await intakeAgentService.processIntakeData(extractedData);
 
-    console.log(`Successfully inserted intake data for contact #${contactId}, new intake_responses ID: ${newResponseId}`);
-    
-    // Clean up temp_calls if we have a callSid
-    if (callSid) {
-      try {
-        console.log(`Updating call_log status for SID: ${callSid}`);
-        await client.query(
-          'UPDATE call_log SET status = $1, processed_at = NOW() WHERE call_sid = $2',
-          ['processed', callSid]
-        );
-
-        console.log(`Cleaning up temp_calls for SID: ${callSid}`);
-        await client.query('DELETE FROM temp_calls WHERE call_sid = $1', [callSid]);
-      } catch (cleanupError) {
-        console.error('Error cleaning up call data:', cleanupError.message);
-      }
-    }
-    
-    // Verify the data was inserted by fetching it back
-    try {
-      const verifyInsert = await pool.query(
-        'SELECT id, contact_id, user_id, communication_style FROM intake_responses WHERE id = $1',
-        [newResponseId]
-      );
-      
-      if (verifyInsert.rows.length > 0) {
-        console.log('VERIFICATION: Successfully retrieved inserted row:', verifyInsert.rows[0]);
-      } else {
-        console.error('VERIFICATION FAILED: Could not retrieve the row that was just inserted!');
-      }
-    } catch (verifyError) {
-      console.error('Error verifying insert:', verifyError.message);
-    }
-    
-    // Only start async parsing if we don't already have the structured fields
-    // and we have a raw transcript to process
-    if (raw_transcript && (!communication_style || !values || !professional_goals || !partnership_expectations)) {
-      console.log('Starting async parsing of raw transcript...');
-      processTranscriptAsync(pool, newResponseId, raw_transcript);
-    } else {
-      console.log('All fields already present, skipping transcript parsing');
-    }
-    
-    return res.json({ 
-      message: 'Intake data stored successfully', 
-      intakeResponseId: newResponseId 
+    // Send a success response
+    res.status(200).json({
+      status: 'success',
+      message: 'Data received and processed successfully',
+      result
     });
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error storing intake data:', error.message);
-    return res.status(500).json({ 
-      error: 'Database error storing intake data', 
-      details: error.message 
+    console.error('Error processing intake data:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error',
+      error: error.message
     });
-  } finally {
-    client.release();
   }
 });
 
