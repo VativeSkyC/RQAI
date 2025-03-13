@@ -39,7 +39,15 @@ const initializeDatabase = () => {
       .then(async (client) => {
         try {
           console.log('Connected to PostgreSQL');
+          // Ensure tables are created
           await dbService.createTables(pool);
+          console.log('Database schema initialized successfully');
+          
+          // Set up a scheduled keep-alive ping
+          setInterval(() => {
+            console.log('Keeping alive...');
+            connectionManager.keepAlive();
+          }, 60000); // Every minute
         } finally {
           client.release();
         }
@@ -67,6 +75,36 @@ app.use('/', twilioRoutes); // Keep the root path for twilio endpoints
 // Redirect to the static version of the interface
 app.get('/old-interface', (req, res) => {
   res.redirect('/');
+});
+
+// Database health check endpoint
+app.get('/db-check', async (req, res) => {
+  try {
+    const pool = req.app.get('pool');
+    const client = await pool.connect();
+    try {
+      const result = await client.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public'
+        ORDER BY table_name
+      `);
+      
+      res.json({
+        status: 'connected',
+        tables: result.rows.map(row => row.table_name),
+        message: 'Database connection successful'
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Database check error:', error.message);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
 });
 
 // Data reception endpoint from Eleven Labs - GET route for testing
