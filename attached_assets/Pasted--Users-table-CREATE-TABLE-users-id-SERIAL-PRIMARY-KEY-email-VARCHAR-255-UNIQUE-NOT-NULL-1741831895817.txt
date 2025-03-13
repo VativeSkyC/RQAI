@@ -1,0 +1,89 @@
+-- Users table
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password VARCHAR(255) NOT NULL
+);
+
+-- Relationships table
+CREATE TABLE relationships (
+  id SERIAL PRIMARY KEY,
+  user1_id INTEGER REFERENCES users(id),
+  user2_id INTEGER REFERENCES users(id),
+  compatibility_score FLOAT,
+  check_in_cadence VARCHAR(50)
+);
+
+-- Contacts table
+CREATE TABLE contacts (
+  id SERIAL PRIMARY KEY,
+  phone_number VARCHAR(15) UNIQUE NOT NULL,
+  first_name VARCHAR(100),
+  last_name VARCHAR(100),
+  company_name VARCHAR(100),
+  linkedin_url VARCHAR(255),
+  user_id INTEGER REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- SMS messages table
+CREATE TABLE sms_messages (
+  id SERIAL PRIMARY KEY,
+  contact_id INTEGER REFERENCES contacts(id),
+  user_id INTEGER REFERENCES users(id),
+  message TEXT NOT NULL,
+  twilio_sid VARCHAR(50),
+  sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- SMS log table
+CREATE TABLE sms_log (
+  id SERIAL PRIMARY KEY,
+  contact_id INTEGER REFERENCES contacts(id),
+  user_id INTEGER REFERENCES users(id),
+  message_type VARCHAR(50) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Temp calls table
+CREATE TABLE temp_calls (
+  id SERIAL PRIMARY KEY,
+  call_sid VARCHAR(50) UNIQUE NOT NULL,
+  phone_number VARCHAR(15) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Call log table
+CREATE TABLE call_log (
+  id SERIAL PRIMARY KEY,
+  call_sid VARCHAR(50) UNIQUE NOT NULL,
+  phone_number VARCHAR(15) NOT NULL,
+  status VARCHAR(50) DEFAULT 'pending',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  processed_at TIMESTAMP
+);
+
+-- Intake responses table
+CREATE TABLE intake_responses (
+  id SERIAL PRIMARY KEY,
+  contact_id INTEGER REFERENCES contacts(id),
+  user_id INTEGER REFERENCES users(id),
+  communication_style TEXT,
+  goals TEXT,
+  values TEXT,
+  professional_goals TEXT,
+  partnership_expectations TEXT,
+  raw_transcript TEXT,
+  response_text TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Set up RLS (Row Level Security)
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE relationships ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sms_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sms_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE temp_calls ENABLE ROW LEVEL SECURITY;
+ALTER TABLE call_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE intake_responses ENABLE ROW LEVEL SECURITY;
