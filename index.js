@@ -22,8 +22,9 @@ app.use(bodyParser.json());
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Import connection manager
+// Import connection manager and retry library
 const connectionManager = require('./services/connectionManager');
+const retry = require('retry-as-promised');
 
 // Initialize database connection
 const initializeDatabase = () => {
