@@ -27,7 +27,36 @@ router.post('/receive-data', async (req, res) => {
 
   // Get caller phone number from the cached personalization data or directly from request
   // This caller should match what was sent during the personalization webhook
-  const callerPhone = req.body.caller_id || req.body.caller || req.body.phone_number;
+  let callerPhone = req.body.caller_id || req.body.caller || req.body.phone_number;
+  
+  // If we're getting "unknown" as the caller ID, try to look up from call_sid
+  if (callerPhone === 'unknown' || !callerPhone) {
+    const callSid = req.body.call_sid || req.body.callSid;
+    if (callSid) {
+      console.log('Attempting to look up caller info from call_sid:', callSid);
+      // Try to query your temp_calls table to get the actual caller_id that was stored during personalization
+      try {
+        const callResult = await pool.query(
+          'SELECT caller_phone FROM temp_calls WHERE call_sid = $1',
+          [callSid]
+        );
+        
+        if (callResult.rows.length > 0 && callResult.rows[0].caller_phone) {
+          callerPhone = callResult.rows[0].caller_phone;
+          console.log('Retrieved caller_phone from temp_calls:', callerPhone);
+        }
+      } catch (lookupError) {
+        console.error('Error looking up call data:', lookupError.message);
+      }
+    }
+  }
+  
+  // If still unknown, try a fallback (for testing/debugging)
+  if (callerPhone === 'unknown' || !callerPhone) {
+    console.warn('⚠️ USING FALLBACK CALLER ID: No valid caller ID could be determined');
+    callerPhone = '+15132017748'; // Fallback to a known caller_id for testing
+  }
+  
   console.log('Looking up contact with phone number:', callerPhone);
   
   const pool = req.app.get('pool');
@@ -88,9 +117,43 @@ router.post('/receive-data', async (req, res) => {
     ]);
 
     const newResponseId = insertResult.rows[0].id;
+    console.log('===== TRANSACTION DETAILS =====');
+    console.log('INSERT STATEMENT EXECUTED:', `
+      INSERT INTO intake_responses (
+        contact_id, user_id, communication_style, values, 
+        professional_goals, partnership_expectations, raw_transcript, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      RETURNING id`);
+    console.log('PARAMETERS:', [
+      contactId, 
+      user_id, 
+      communication_style || null, 
+      values || null, 
+      professional_goals || null, 
+      partnership_expectations || null, 
+      raw_transcript ? `${raw_transcript.length} chars` : null
+    ]);
+    
     await client.query('COMMIT');
+    console.log('TRANSACTION COMMITTED SUCCESSFULLY ✅');
 
     console.log(`Successfully inserted intake data for contact #${contactId}, new intake_responses ID: ${newResponseId}`);
+    
+    // Verify the data was inserted by fetching it back
+    try {
+      const verifyInsert = await pool.query(
+        'SELECT id, contact_id, user_id, communication_style FROM intake_responses WHERE id = $1',
+        [newResponseId]
+      );
+      
+      if (verifyInsert.rows.length > 0) {
+        console.log('VERIFICATION: Successfully retrieved inserted row:', verifyInsert.rows[0]);
+      } else {
+        console.error('VERIFICATION FAILED: Could not retrieve the row that was just inserted!');
+      }
+    } catch (verifyError) {
+      console.error('Error verifying insert:', verifyError.message);
+    }
     
     // Only start async parsing if we don't already have the structured fields
     // and we have a raw transcript to process
