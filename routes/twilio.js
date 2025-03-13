@@ -1,6 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
+const OpenAI = require('openai');
+
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 // Twilio voice endpoint with Eleven Labs integration
 // Ensure this endpoint is accessible at /voice
@@ -207,6 +213,75 @@ router.post('/twilio-personalization', async (req, res) => {
   }
 });
 
+// Helper function to parse transcript with OpenAI
+async function parseTranscriptWithOpenAI(transcript) {
+  try {
+    console.log('Parsing transcript with OpenAI...');
+    
+    const completion = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      temperature: 0.2,
+      messages: [
+        {
+          role: "system",
+          content: `You are a data extraction assistant that analyzes conversation transcripts.
+          Extract the following information from the transcript:
+          1. The caller's preferred communication style
+          2. The caller's professional goals for the next year
+          3. The values important to the caller in a professional relationship
+          4. The caller's expectations from a professional partnership
+          
+          Return ONLY a JSON object with these exact field names:
+          {
+            "communication_style": "extracted answer",
+            "professional_goals": "extracted answer",
+            "values": "extracted answer",
+            "partnership_expectations": "extracted answer"
+          }`
+        },
+        {
+          role: "user",
+          content: transcript
+        }
+      ]
+    });
+    
+    // Extract the JSON from the response
+    const responseText = completion.choices[0].message.content.trim();
+    console.log('OpenAI response:', responseText);
+    
+    // Try to parse the JSON
+    try {
+      // Find the JSON object in the text (handle cases where there might be extra text)
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      return JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('Error parsing OpenAI JSON:', parseError.message);
+      console.log('Raw response:', responseText);
+      
+      // Fallback: try to extract fields with regex if JSON parsing fails
+      const extractField = (fieldName) => {
+        const regex = new RegExp(`"${fieldName}"\\s*:\\s*"([^"]+)"`, 'i');
+        const match = responseText.match(regex);
+        return match ? match[1] : null;
+      };
+      
+      return {
+        communication_style: extractField('communication_style'),
+        professional_goals: extractField('professional_goals'),
+        values: extractField('values'),
+        partnership_expectations: extractField('partnership_expectations')
+      };
+    }
+  } catch (error) {
+    console.error('Error calling OpenAI:', error.message);
+    return null;
+  }
+}
+
 // Data reception endpoint from Eleven Labs
 router.post('/receive-data', async (req, res) => {
   console.log('===========================================');
@@ -350,6 +425,22 @@ router.post('/receive-data', async (req, res) => {
     console.log('- raw_transcript:', rawTranscript ? `${rawTranscript.substring(0, 100)}... (${rawTranscript.length} chars)` : 'NULL');
 
     try {
+      // First, parse the transcript with OpenAI if we have one
+      let parsedData = null;
+      const rawTranscript = req.body.raw_transcript || req.body.rawTranscript || req.body.transcript;
+      
+      if (rawTranscript) {
+        console.log('Raw transcript available, attempting OpenAI parsing...');
+        parsedData = await parseTranscriptWithOpenAI(rawTranscript);
+        if (parsedData) {
+          console.log('Successfully parsed transcript with OpenAI:', parsedData);
+        } else {
+          console.log('OpenAI parsing failed, will use available fields from payload');
+        }
+      } else {
+        console.log('No raw transcript available for parsing');
+      }
+      
       const pool = req.app.get('pool');
       const client = await pool.connect();
 
@@ -510,6 +601,34 @@ router.post('/receive-data', async (req, res) => {
         console.log('- raw_transcript:', rawTranscript ? 'Present' : 'Null');
 
         try {
+          // Prioritize parsed data from OpenAI if available
+          const communication_style = parsedData?.communication_style || 
+                                     communicationStyle || 
+                                     req.body.communication_style || 
+                                     null;
+                                     
+          const values_data = parsedData?.values || 
+                             values || 
+                             req.body.values || 
+                             null;
+                             
+          const professional_goals = parsedData?.professional_goals || 
+                                    professionalGoals || 
+                                    req.body.professional_goals || 
+                                    goals || 
+                                    null;
+                                    
+          const partnership_expectations = parsedData?.partnership_expectations || 
+                                          partnershipExpectations || 
+                                          req.body.partnership_expectations || 
+                                          null;
+          
+          console.log('=== FINAL DATA FOR DATABASE INSERT ===');
+          console.log('- communication_style:', communication_style);
+          console.log('- values:', values_data);
+          console.log('- professional_goals:', professional_goals);
+          console.log('- partnership_expectations:', partnership_expectations);
+          
           const insertResult = await client.query(
             `INSERT INTO intake_responses (
               contact_id, user_id, communication_style, values, 
@@ -519,10 +638,10 @@ router.post('/receive-data', async (req, res) => {
             [
               contactId, 
               userId, 
-              communicationStyle || null, 
-              values || null, 
-              professionalGoals || null, 
-              partnershipExpectations || null, 
+              communication_style, 
+              values_data, 
+              professional_goals, 
+              partnership_expectations, 
               rawTranscript || null
             ]
           );
