@@ -1,3 +1,4 @@
+
 const express = require('express');
 const router = express.Router();
 const intakeAgentService = require('../services/intakeAgentService');
@@ -5,12 +6,16 @@ const authMiddleware = require('../middleware/auth');
 
 // Special middleware for ElevenLabs - allow requests with webhook data
 const elevenlabsAuth = (req, res, next) => {
-  // Check if it has the specific fields that would indicate it's from ElevenLabs
-  if (req.body && (req.body.caller_id || req.body.raw_transcript)) {
+  console.log('Checking request for ElevenLabs webhook data...');
+  
+  // Check if it's an ElevenLabs webhook (has expected fields)
+  if (req.body && 
+     (req.body.caller_id || req.body.raw_transcript || req.body.communication_style)) {
     console.log('ElevenLabs webhook detected, bypassing authentication');
     return next();
   }
-
+  
+  console.log('Not an ElevenLabs webhook, applying regular JWT auth');
   // Otherwise, apply regular JWT auth
   authMiddleware.verifyToken(req, res, next);
 };
