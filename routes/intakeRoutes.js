@@ -25,22 +25,49 @@ router.post('/receive-data', async (req, res) => {
   console.log('partnership_expectations:', partnership_expectations ? 'PRESENT' : 'MISSING');
   console.log('raw_transcript:', raw_transcript ? `PRESENT (${raw_transcript.length} chars)` : 'MISSING');
 
-  // Just use the caller_id from personalization webhook directly
-  // This will be the same ID that was logged in your personalization webhook
-  let callerPhone = req.body.caller_id;
+  // Get caller phone number from the request or lookup in temp_calls table
+  let callerPhone = req.body.caller_id || req.body.caller || req.body.phone_number;
+  const callSid = req.body.call_sid || req.body.callSid;
   
   console.log('Received caller_id in request:', callerPhone);
+  console.log('Received call_sid in request:', callSid);
   
-  // If somehow missing, look for alternative fields
-  if (!callerPhone) {
-    callerPhone = req.body.caller || req.body.phone_number;
-    console.log('Using alternative caller identification:', callerPhone);
+  // If we don't have a caller_id but do have a call_sid, look it up in temp_calls
+  if (!callerPhone && callSid) {
+    console.log('Looking up caller phone from call_sid in temp_calls:', callSid);
+    
+    try {
+      // Try to find the phone number in temp_calls table using the call_sid
+      const callResult = await client.query(
+        'SELECT phone_number FROM temp_calls WHERE call_sid = $1',
+        [callSid]
+      );
+      
+      if (callResult.rows.length > 0) {
+        callerPhone = callResult.rows[0].phone_number;
+        console.log('Retrieved phone number from temp_calls:', callerPhone);
+      } else {
+        // Fallback to call_log if not found in temp_calls
+        console.log('Call not found in temp_calls, checking call_log...');
+        const logResult = await client.query(
+          'SELECT phone_number FROM call_log WHERE call_sid = $1',
+          [callSid]
+        );
+        
+        if (logResult.rows.length > 0) {
+          callerPhone = logResult.rows[0].phone_number;
+          console.log('Retrieved phone number from call_log:', callerPhone);
+        }
+      }
+    } catch (lookupError) {
+      console.error('Error looking up call data:', lookupError.message);
+    }
   }
   
   // If still missing, use the fallback from the personalization webhook
   if (!callerPhone) {
-    console.warn('⚠️ USING FALLBACK CALLER ID: No valid caller ID in request');
-    callerPhone = '+15132017748'; // This matches the number from your personalization webhook
+    console.warn('⚠️ USING FALLBACK CALLER ID: No valid caller ID could be determined');
+    callerPhone = '+15132017748'; // Fallback for testing
   }
   
   console.log('Looking up contact with phone number:', callerPhone);
@@ -124,6 +151,22 @@ router.post('/receive-data', async (req, res) => {
     console.log('TRANSACTION COMMITTED SUCCESSFULLY ✅');
 
     console.log(`Successfully inserted intake data for contact #${contactId}, new intake_responses ID: ${newResponseId}`);
+    
+    // Clean up temp_calls if we have a callSid
+    if (callSid) {
+      try {
+        console.log(`Updating call_log status for SID: ${callSid}`);
+        await client.query(
+          'UPDATE call_log SET status = $1, processed_at = NOW() WHERE call_sid = $2',
+          ['processed', callSid]
+        );
+
+        console.log(`Cleaning up temp_calls for SID: ${callSid}`);
+        await client.query('DELETE FROM temp_calls WHERE call_sid = $1', [callSid]);
+      } catch (cleanupError) {
+        console.error('Error cleaning up call data:', cleanupError.message);
+      }
+    }
     
     // Verify the data was inserted by fetching it back
     try {
