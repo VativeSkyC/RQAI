@@ -22,9 +22,9 @@ app.use(bodyParser.json());
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Import connection manager and retry library
+// Import connection manager and database service
 const connectionManager = require('./services/connectionManager');
-const { retryAsPromised } = require('retry-as-promised');
+const retry = require('retry-as-promised');
 
 // Initialize database connection
 const initializeDatabase = () => {
@@ -36,11 +36,7 @@ const initializeDatabase = () => {
     app.set('pool', pool);
 
     // Try to connect and create tables
-    retryAsPromised({
-      retries: 5,
-      factor: 2,
-      minTimeout: 1000,
-    })(connectionManager.getClient())
+    connectionManager.getClient()
       .then(async (client) => {
         try {
           console.log('Connected to PostgreSQL');
