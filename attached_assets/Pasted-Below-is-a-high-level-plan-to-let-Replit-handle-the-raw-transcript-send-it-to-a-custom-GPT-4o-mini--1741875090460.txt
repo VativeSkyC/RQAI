@@ -1,0 +1,194 @@
+Below is a high-level plan to let Replit handle the raw transcript, send it to a custom GPT-4o-mini (or any LLM) agent for parsing, and then update your database with the final fields (communication_style, professional_goals, values, partnership_expectations). The flow will be:
+
+Receive raw transcript from ElevenLabs in /receive-data.
+Store that transcript in your database (e.g. raw_transcript in intake_responses).
+Call your custom GPT-4o-mini LLM endpoint with the raw transcript.
+GPT-4o returns a JSON object with the extracted answers.
+Your Replit server updates the relevant columns in your DB row.
+Below are detailed steps with minimal code outline to show how to implement each part.
+
+1. Store Only raw_transcript Initially
+In /receive-data, do something like:
+
+js
+Copy
+app.post('/receive-data', async (req, res) => {
+  console.log('DEBUG: /receive-data called');
+  console.log('Request body:', JSON.stringify(req.body, null, 2));
+
+  // Extract the raw transcript
+  const { raw_transcript } = req.body;
+
+  // Identify the contact or create a new row in intake_responses
+  // For example:
+  const callerPhone = req.body.caller || req.body.phone_number; // or fallback
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Step A: find contactId (or create a new contact if you prefer)
+    const contactResult = await client.query(
+      'SELECT id, user_id FROM contacts WHERE phone_number = $1 LIMIT 1',
+      [callerPhone]
+    );
+    if (contactResult.rows.length === 0) {
+      // handle unknown contact or do a fallback
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Contact not found for phone:', callerPhone });
+    }
+    const { id: contactId, user_id } = contactResult.rows[0];
+
+    // Step B: Insert a new record in intake_responses with only raw_transcript
+    //         (Leave communication_style, etc. as null for now)
+    const insertResult = await client.query(`
+      INSERT INTO intake_responses (
+        contact_id,
+        user_id,
+        raw_transcript,
+        created_at
+      ) VALUES ($1, $2, $3, NOW())
+      RETURNING id
+    `, [contactId, user_id, raw_transcript || null]);
+
+    const newResponseId = insertResult.rows[0].id;
+    await client.query('COMMIT');
+
+    console.log(`Inserted raw transcript for contact #${contactId}, new intake_responses ID: ${newResponseId}`);
+    return res.json({ message: 'Raw transcript stored', intakeResponseId: newResponseId });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error storing raw transcript:', error.message);
+    return res.status(500).json({ error: 'DB error storing raw transcript', details: error.message });
+  } finally {
+    client.release();
+  }
+});
+Explanation
+We only store the raw_transcript.
+The fields communication_style, professional_goals, values, partnership_expectations remain NULL.
+We log the new row ID so we know which row to update later.
+(Note: If you need to do the contact lookup in a different manner, adapt accordingly.)
+
+2. Use GPT-4o-mini to Parse the Transcript
+We’ll add a new endpoint (e.g. /parse-transcript/:intakeResponseId). This endpoint:
+
+Looks up the row from intake_responses to get raw_transcript.
+Calls your GPT-4o-mini Agent with instructions to parse out the 4 fields.
+Receives a JSON response from GPT-4o like:
+json
+Copy
+{
+  "communication_style": "Direct and concise",
+  "professional_goals": "Growth and stability",
+  "values": "Trust is the most important",
+  "partnership_expectations": "Regular updates is required"
+}
+Updates that row in your DB with these extracted fields.
+Example Code
+js
+Copy
+app.post('/parse-transcript/:intakeId', async (req, res) => {
+  const { intakeId } = req.params;
+  
+  const client = await pool.connect();
+  try {
+    // 1) Fetch the raw transcript
+    const respResult = await client.query(
+      `SELECT id, contact_id, user_id, raw_transcript
+       FROM intake_responses
+       WHERE id = $1
+       LIMIT 1`,
+      [intakeId]
+    );
+    if (respResult.rows.length === 0) {
+      client.release();
+      return res.status(404).json({ error: 'intake_responses row not found' });
+    }
+    const { raw_transcript, contact_id, user_id } = respResult.rows[0];
+
+    // 2) Call your GPT-4o-mini endpoint
+    //    Suppose you have something like:
+    //    POST https://api.your-llm-service.com/parse-intake
+    //    with { raw_transcript } in the body
+    const axios = require('axios');
+    let llmResponse;
+    try {
+      llmResponse = await axios.post(
+        'https://api.your-llm-service.com/parse-intake',
+        {
+          prompt: `Extract the user's answers to the following questions from this transcript:\n\n${raw_transcript}\n\nThen return JSON with these keys: communication_style, professional_goals, values, partnership_expectations.`,
+          model: 'gpt-4o-mini' 
+        },
+        { headers: { 'Content-Type': 'application/json' }}
+      );
+    } catch (llmError) {
+      console.error('Error calling GPT-4o-mini:', llmError.message);
+      return res.status(500).json({ error: 'Failed to parse transcript with GPT-4o' });
+    }
+
+    console.log('LLM parse result:', llmResponse.data);
+
+    // 3) The LLM returns structured data
+    //    e.g. { communication_style: "...", professional_goals: "...", values: "...", partnership_expectations: "..." }
+    const {
+      communication_style,
+      professional_goals,
+      values,
+      partnership_expectations
+    } = llmResponse.data;
+
+    // 4) Update the DB row with these fields
+    await client.query('BEGIN');
+    await client.query(`
+      UPDATE intake_responses
+      SET communication_style = $1,
+          professional_goals = $2,
+          values = $3,
+          partnership_expectations = $4
+      WHERE id = $5
+    `, [
+      communication_style || null,
+      professional_goals || null,
+      values || null,
+      partnership_expectations || null,
+      intakeId
+    ]);
+    await client.query('COMMIT');
+    
+    client.release();
+
+    return res.json({
+      message: 'Successfully parsed and updated intake_responses',
+      updatedFields: {
+        communication_style,
+        professional_goals,
+        values,
+        partnership_expectations
+      }
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    client.release();
+    console.error('Error in parse-transcript route:', error.message);
+    return res.status(500).json({ error: 'Parse transcript route error', details: error.message });
+  }
+});
+Explanation:
+
+We retrieve the row containing raw_transcript.
+We make a POST request to your GPT-4o-mini endpoint with a prompt telling it how to parse the text.
+We update intake_responses with the newly extracted fields.
+(If you have a different flow for GPT-4o (like a local library or an internal function), adapt the code accordingly. The essential step is: we pass raw_transcript + instructions, get back a structured result, then do a DB update.)
+
+3. Putting It All Together
+When the call ends: ElevenLabs sends a request to /receive-data.
+Your code stores raw_transcript in a new row.
+That row’s id is returned to the client or stored in logs.
+LLM Parsing: You (or your Replit code) can automatically or manually call /parse-transcript/:intakeId to handle the newly created row. Possibly you do it right after the row is created, or run a CRON job.
+Check the final DB row: You’ll see communication_style, professional_goals, values, partnership_expectations populated (plus the original raw_transcript).
+Optional: If you want this all in one step, you can combine the logic so that once the raw_transcript is inserted, you immediately call the LLM and do an update. But it’s typically safer to separate the steps—especially if LLM calls can be slow or might fail.
+
+4. Key Advantages of This Approach
+No worrying about matching field names from Eleven Labs. The AI call is free to produce any “raw” text—your GPT-4o parser does the heavy lifting.
+You can re-run the parsing any time. If you improve your prompt or GPT-4o logic, you can re-parse old transcripts to get better data.
+The “raw_transcript” always remains as a source of truth.
