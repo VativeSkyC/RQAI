@@ -1,0 +1,113 @@
+Below is a **diagnosis** of why you’re getting the error `insertResult is not defined` in your **Twilio route** (`twilio.js`) around line 657, plus some **quick ways to fix it**. Essentially, the **variable `insertResult` is referenced** in code **outside** the scope where it’s actually declared, or it’s simply not declared at all before use. Let’s see why:
+
+---
+
+## 1. Typical Pattern for `insertResult is not defined`
+
+The code around line 657 appears to do something like:
+
+```js
+try {
+  let insertResult;
+  
+  // Do the insert
+  insertResult = await client.query(`
+    INSERT INTO intake_responses (...)
+    RETURNING id
+  `, [...]);
+
+  console.log('INSERT successful, new row ID:', insertResult.rows[0]?.id);
+
+} catch (insertError) {
+  // ...
+}
+console.log(`INSERT successful. New intake_responses row ID: ${insertResult.rows[0]?.id || 'unknown'}`);
+```
+
+**Notice** the final `console.log` is **outside** the `try` block in which `insertResult` is declared, so if `insertResult` is declared inside a block scope, it might be undefined outside of it.  
+
+Alternatively, you might have **two** separate code blocks referencing `insertResult`:  
+- one inside the `try`  
+- one after the `try`/`catch`.
+
+If you see the error `ReferenceError: insertResult is not defined`, that means JavaScript can’t find `insertResult` in the current scope. Possibly you declared `const insertResult = ...` inside a `try` block but you reference it after the block.
+
+---
+
+## 2. How to Fix
+
+1. **Declare `insertResult`** at a higher (function) scope so both blocks can see it:
+
+   ```js
+   let insertResult;  // Declare up front
+
+   try {
+     await client.query('BEGIN');
+     insertResult = await client.query(`INSERT ... RETURNING id`, [/*...*/]);
+     console.log('INSERT done:', insertResult.rows[0]?.id);
+     await client.query('COMMIT');
+   } catch (error) {
+     console.log('Error in insert:', error.message);
+     await client.query('ROLLBACK');
+     throw error;
+   }
+
+   // If we got here, we have `insertResult`.
+   console.log(`INSERT successful. New intake_responses row ID: ${insertResult?.rows[0]?.id || 'unknown'}`);
+   ```
+2. **Or** if you only need `insertResult` inside that try block, **remove** references to `insertResult` outside. Typically the final line `console.log(...)` can go *inside* the `try` block if you don’t need it afterwards.
+
+3. **Check variable name**: Maybe you typed `insertResult` in one place and `insetResult` or `insertResults` in another. That mismatch also triggers “is not defined.”
+
+---
+
+## 3. Example of a Correct Pattern
+
+Here’s a minimal snippet that ensures `insertResult` is in scope:
+
+```js
+try {
+  await client.query('BEGIN');
+
+  let insertResult; // declare it so it can be used in entire block
+  try {
+    insertResult = await client.query(
+      `INSERT INTO intake_responses (...) VALUES (...) RETURNING id`, 
+      [...]
+    );
+    console.log('INSERT successful, new row ID:', insertResult.rows[0].id);
+  } catch (insertError) {
+    console.error('INSERT ERROR:', insertError.message);
+    throw insertError;
+  }
+
+  await client.query('COMMIT');
+  console.log(`INSERT successful. New intake_responses row ID: ${insertResult.rows[0].id}`);
+} catch (error) {
+  await client.query('ROLLBACK');
+  console.error('Error storing data:', error.message);
+  return res.status(500).json({ error: 'Failed to store data', details: error.message });
+} finally {
+  client.release();
+}
+```
+
+Now, `insertResult` is declared at the top of the big `try` block, so **both** the insert sub-try and the post-commit logs can access it.
+
+---
+
+## 4. Why This Error Affects the Insert
+
+Because the code crashes with `insertResult is not defined`, the final lines never run. So your server returns a 500 response with the message `"insertResult is not defined"`—and presumably **doesn’t** respond with `"Data stored successfully"`.
+
+**Once** you fix the variable scope issue, the code will properly finalize the insert, commit, and respond with `200`.
+
+---
+
+## 5. Conclusion
+
+- The snippet is otherwise correct, but references to `insertResult` appear **outside** the scope in which it’s declared.  
+- **Move** the declaration and usage so they’re in the same scope.  
+- Then the “insertResult is not defined” error will disappear, and your code will proceed with the DB insert successfully.  
+
+That’s it! Adjust the scoping, confirm no typos, and you’ll be good to go.
