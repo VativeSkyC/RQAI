@@ -5,7 +5,7 @@ const router = express.Router();
 // Personalization Webhook for ElevenLabs inbound Twilio calls
 router.post('/twilio-personalization', async (req, res) => {
   try {
-    const { caller_id, agent_id, called_number, call_sid } = req.body;
+    const { caller_id, agent_id, called_number, call_sid } = req.body || {};
     console.log('Received personalization request:', { caller_id, agent_id, called_number, call_sid });
 
     if (!caller_id || !call_sid) {
@@ -14,7 +14,6 @@ router.post('/twilio-personalization', async (req, res) => {
     }
 
     // 2. Extract data from ElevenLabs request
-    const { caller_id, agent_id, called_number, call_sid } = req.body || {};
     if (!caller_id || !call_sid) {
       console.error('Missing caller_id or call_sid in personalization webhook');
       return res.status(400).json({ error: 'Invalid payload' });
