@@ -1,0 +1,118 @@
+A **422** from `https://api.us.elevenlabs.io/twilio/inbound_call` usually means **ElevenLabs** didn’t like the JSON your `twilio-personalization` endpoint returned. In other words, the body you send back to ElevenLabs **doesn’t match** what their inbound call API is expecting.  
+
+In your current code, you’re returning:
+
+```json
+{
+  "dynamic_variables": {
+    "contact_name": "Jen",
+    "caller_id": "+15132017748",
+    "call_sid": "CAxxxx"
+  },
+  "prompt": "...some string...",
+  "first_message": "Hello Jen...",
+  "language": "en"
+}
+```
+
+But originally (and in the ElevenLabs docs), the **inbound_call** personalization expects something like:
+
+```json
+{
+  "dynamic_variables": { /* optional context */ },
+  "conversation_config_override": {
+    "agent": {
+      "prompt": {
+        "prompt": "...your system prompt text..."
+      },
+      "first_message": "Hello [Name], ...",
+      "language": "en"
+    }
+  }
+}
+```
+
+That is the shape they show in their docs. If you deviate from that shape—e.g., you do not return `conversation_config_override.agent`, or you put `prompt` at the top level—ElevenLabs can respond with a 422 “unprocessible entity.”
+
+---
+
+## How to Fix the 422
+
+**A. Return the exact JSON shape** that ElevenLabs expects for Twilio inbound personalization. Typically:
+
+```json
+{
+  "dynamic_variables": {
+    "caller_id": "+15132017748",
+    "call_sid": "CAxxxx"
+  },
+  "conversation_config_override": {
+    "agent": {
+      "prompt": {
+        "prompt": "The multi-line system prompt or instructions..."
+      },
+      "first_message": "Your greeting line for the user.",
+      "language": "en"
+    }
+  }
+}
+```
+
+### Concretely, in your code:
+
+```js
+return res.status(200).json({
+  dynamic_variables: {
+    contact_name: existingContact.first_name,
+    caller_id: caller_id,
+    call_sid: call_sid
+  },
+  conversation_config_override: {
+    agent: {
+      prompt: {
+        prompt: systemPrompt
+      },
+      first_message: greeting,
+      language: "en"
+    }
+  }
+});
+```
+
+**Note**: The `systemPrompt` you generated goes into `prompt.prompt`, the greeting is `first_message`, etc.  
+
+**B.** Don’t rename the fields to top-level `prompt` or `first_message`. The inbound_call docs show the structure must be nested under `conversation_config_override.agent.prompt`.  
+
+**C.** If the official ElevenLabs docs show any extra or different keys (like `tts` or `voice_id`), follow that structure precisely.  
+
+---
+
+## Why This Matters
+
+When Twilio calls `https://api.us.elevenlabs.io/twilio/inbound_call?caller=...`, ElevenLabs then does **another** call to your personalization webhook and expects the JSON in a very specific shape. If you return a shape they **don’t** parse, you get the `422: Error in getting conversation initiation client data from the webhook.`  
+
+**Once** you revert to returning the JSON shape they require (i.e., the `conversation_config_override.agent` block), your personalization webhook will succeed (HTTP 200) and ElevenLabs will start the conversation with your system prompt and first message.  
+
+---
+
+### TL;DR
+
+**Yes**, your code is correct for the business logic, but you must **restore** the `conversation_config_override` shape that ElevenLabs expects for Twilio inbound calls. Something like:
+
+```js
+return res.status(200).json({
+  dynamic_variables: {
+    caller_phone: caller_id,
+    callSid: call_sid
+  },
+  conversation_config_override: {
+    agent: {
+      prompt: { prompt: systemPrompt },
+      first_message: greeting,
+      language: 'en'
+    }
+  }
+});
+```
+
+That will eliminate the 422 error.
