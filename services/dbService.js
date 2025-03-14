@@ -171,19 +171,55 @@ const createTables = async (pool) => {
 };
 
 /**
- * Cleans up old records from temp_calls table
+ * Cleans up old records from temp_calls table based on time interval
  * @param {Object} pool - PostgreSQL connection pool
+ * @param {string} interval - PostgreSQL interval string (e.g., '4 hours', '1 day')
  */
-const cleanupTempCalls = async (pool) => {
+const cleanupTempCalls = async (pool, interval = '4 hours') => {
   try {
-    const result = await pool.query('DELETE FROM temp_calls WHERE created_at < NOW() - INTERVAL \'4 hours\'');
-    console.log(`Cleaned up temp_calls table: ${result.rowCount} old records removed`);
+    const result = await pool.query(`DELETE FROM temp_calls WHERE created_at < NOW() - INTERVAL '${interval}'`);
+    console.log(`Cleaned up temp_calls table: ${result.rowCount} old records removed (older than ${interval})`);
+    return result.rowCount;
   } catch (error) {
     console.error('Error cleaning up temp_calls:', error.message);
+    throw error;
+  }
+};
+
+/**
+ * Cleans up all temp_calls records
+ * @param {Object} pool - PostgreSQL connection pool
+ */
+const clearAllTempCalls = async (pool) => {
+  try {
+    const result = await pool.query('DELETE FROM temp_calls');
+    console.log(`Cleared all records from temp_calls table: ${result.rowCount} records removed`);
+    return result.rowCount;
+  } catch (error) {
+    console.error('Error clearing temp_calls:', error.message);
+    throw error;
+  }
+};
+
+/**
+ * Cleans up temp_calls records for a specific phone number
+ * @param {Object} pool - PostgreSQL connection pool
+ * @param {string} phoneNumber - Phone number to remove
+ */
+const clearTempCallsByPhone = async (pool, phoneNumber) => {
+  try {
+    const result = await pool.query('DELETE FROM temp_calls WHERE phone_number = $1', [phoneNumber]);
+    console.log(`Cleared temp_calls for phone ${phoneNumber}: ${result.rowCount} records removed`);
+    return result.rowCount;
+  } catch (error) {
+    console.error(`Error clearing temp_calls for ${phoneNumber}:`, error.message);
+    throw error;
   }
 };
 
 module.exports = {
   createTables,
-  cleanupTempCalls
+  cleanupTempCalls,
+  clearAllTempCalls,
+  clearTempCallsByPhone
 };

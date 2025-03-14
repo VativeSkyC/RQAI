@@ -151,30 +151,53 @@ router.post('/receive-data', async (req, res) => {
       }
     }
     
-    // Find contact using phoneNumber
+    // Find contact using phoneNumber and verify approval status
     let contactId = null;
     let userId = null;
+    let isApproved = false;
     
     try {
       const contactResult = await client.query(
-        'SELECT id, user_id FROM contacts WHERE phone_number = $1 LIMIT 1',
+        'SELECT id, user_id, is_approved FROM contacts WHERE phone_number = $1 LIMIT 1',
         [phoneNumber]
       );
       
       if (contactResult.rows.length > 0) {
         contactId = contactResult.rows[0].id;
         userId = contactResult.rows[0].user_id;
-        console.log(`Found contact with ID ${contactId} for phone ${phoneNumber}`);
+        isApproved = contactResult.rows[0].is_approved;
+        console.log(`Found contact with ID ${contactId} for phone ${phoneNumber}, approval status: ${isApproved}`);
       } else {
-        console.log(`No contact found for phone ${phoneNumber}`);
+        console.log(`No contact found for phone ${phoneNumber} - unauthorized caller`);
       }
     } catch (contactError) {
       console.error('Error finding contact:', contactError.message);
     }
     
-    console.log('Inserting data into intake_responses table...');
+    // Only store intake data if contact exists and is approved
+    if (!contactId) {
+      console.log(`Skipping intake storage: Phone ${phoneNumber} not found in contacts database`);
+      await client.query('COMMIT');
+      return res.status(200).json({
+        status: 'warning',
+        message: 'Call processed but data not stored - unauthorized caller',
+        phone_number: phoneNumber
+      });
+    }
     
-    // Insert into intake_responses with contact info if available
+    if (!isApproved) {
+      console.log(`Skipping intake storage: Contact ${contactId} exists but is not approved`);
+      await client.query('COMMIT');
+      return res.status(200).json({
+        status: 'warning',
+        message: 'Call processed but data not stored - unapproved contact',
+        contact_id: contactId
+      });
+    }
+    
+    console.log('Inserting data into intake_responses table for approved contact...');
+    
+    // Insert into intake_responses with contact info
     const insertResult = await client.query(`
       INSERT INTO intake_responses 
       (phone_number, contact_id, user_id, communication_style, values, professional_goals, 
