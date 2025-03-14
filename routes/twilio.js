@@ -77,13 +77,25 @@ router.post('/twilio-personalization', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    // 2. Extract data from ElevenLabs
-    const { caller_id, agent_id, called_number, call_sid } = req.body || {};
+    // 2. Extract data from ElevenLabs with deep object inspection
+    const extractField = (keys) => {
+      for (const key of keys) {
+        if (req.body[key] !== undefined) return req.body[key];
+        if (req.body.data?.[key] !== undefined) return req.body.data[key];
+        if (req.body.conversation?.[key] !== undefined) return req.body.conversation[key];
+      }
+      return undefined;
+    };
+
+    const caller_id = extractField(['caller_id', 'caller', 'phone_number']);
+    const call_sid = extractField(['call_sid', 'callSid', 'call_id']);
+
     if (!caller_id || !call_sid) {
       console.error('Missing caller_id or call_sid in personalization webhook');
+      console.log('Debug - Full request body:', JSON.stringify(req.body, null, 2));
       return res.status(400).json({ error: 'Invalid payload' });
     }
-    console.log('Personalization webhook triggered:', req.body);
+    console.log('Personalization webhook triggered - caller:', caller_id, 'call:', call_sid);
 
     // Store call SID and phone number in temp_calls for lookup during final callback
     const pool = req.app.get('pool');
