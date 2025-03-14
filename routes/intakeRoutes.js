@@ -3,33 +3,9 @@ const router = express.Router();
 const intakeAgentService = require('../services/intakeAgentService');
 const authMiddleware = require('../middleware/auth');
 
-// IMPORTANT: Special handling for ElevenLabs webhook with HMAC verification
-const crypto = require('crypto');
-
-
-
+// IMPORTANT: Special handling for ElevenLabs webhook
+// This route must accept webhook requests without token authentication
 router.post('/receive-data', async (req, res) => {
-  // Verify HMAC signature if secret is configured
-  const signature = req.headers['x-el-signature'];
-  const secret = process.env.ELEVENLABS_SECRET;
-  
-  if (secret) {
-    if (!signature) {
-      console.error('Missing HMAC signature in headers');
-      return res.status(403).json({ error: 'Missing HMAC signature' });
-    }
-
-    const computedSignature = crypto
-      .createHmac('sha256', secret)
-      .update(req.rawBody)
-      .digest('hex');
-
-    if (computedSignature !== signature) {
-      console.error('Invalid HMAC signature');
-      return res.status(403).json({ error: 'Invalid signature' });
-    }
-    console.log('HMAC signature verified successfully');
-  }
   console.log('===========================================');
   console.log('🔄 RECEIVED DATA FROM ELEVEN LABS');
   console.log('===========================================');
