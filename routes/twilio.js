@@ -148,8 +148,8 @@ router.post('/twilio-personalization', async (req, res) => {
       console.log('Returning polite rejection for unrecognized caller:', caller_id);
       return res.status(200).json({
         dynamic_variables: {
-          user_name: userName,
-          caller_id: caller_id
+          caller_id: caller_id,
+          call_sid: call_sid
         },
         conversation_config_override: {
           agent: {
@@ -165,8 +165,9 @@ router.post('/twilio-personalization', async (req, res) => {
 
     // 5. If contact found, respond with intake questionnaire instructions
     const dynamicVariables = {
-      contactName: existingContact.first_name || 'Caller',
-      contactId: existingContact.id
+      caller_id: caller_id,
+      call_sid: call_sid,
+      contact_name: existingContact.first_name || 'Caller'
     };
 
     // The greeting that mentions Chase and asks user to confirm readiness
