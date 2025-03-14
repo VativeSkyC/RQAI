@@ -1,0 +1,102 @@
+Based on your logs, the code is indeed ready to look up the phone number from temp_calls if a matching call_sid arrives—but the final callback from ElevenLabs never includes the same callSid or phone number. That’s why it’s still inserting "caller_id": "unknown" and skipping the temp_calls logic.
+
+1. The Final Callback Is Missing call_sid
+From your debug output:
+
+typescript
+Copy
+Request body: {
+  "caller_id": "unknown",
+  ...
+  // no call_sid or it's not the same as in temp_calls
+}
+...
+callSid: NOT PROVIDED
+caller: unknown
+This means your final /receive-data code is never able to do:
+
+js
+Copy
+SELECT phone_number FROM temp_calls WHERE call_sid = $1
+…because there’s no call_sid in the request to match.
+
+In other words: The personalization webhook you built does store (call_sid, phone_number) in temp_calls. But the final callback isn’t sending that same call_sid or any phone number. So the code never finds temp_calls record, never sets phoneNumber, and ends with 'caller_id': 'unknown'.
+
+2. Why Doesn’t the Final Callback Have the call_sid?
+ElevenLabs makes two separate HTTP requests to your server:
+
+Personalization:
+
+json
+Copy
+{
+  "caller_id": "+15132017748",
+  "call_sid": "CAxxxx"
+  ...
+}
+You store it in temp_calls.
+
+Final:
+
+json
+Copy
+{
+  "caller_id": "unknown",
+  "call_sid": null,
+  ...
+}
+So your code tries SELECT phone_number FROM temp_calls WHERE call_sid = null; → returns zero rows. The fallback sees “unknown,” or missing phone_number.
+
+Hence no successful DB insert for a real call. The code can’t unify the requests without a consistent ID.
+
+3. Confirm ElevenLabs’ Twilio Agent Is Passing the Same call_sid
+In your ElevenLabs dashboard or agent config, you typically set something like:
+
+“For inbound calls, pass call_sid in the final transcript callback.”
+
+But from your logs, it’s not happening. The final request does:
+
+json
+Copy
+"caller_id": "unknown",
+"call_sid": NOT PROVIDED
+You can control or check in the ElevenLabs “Security” or “Settings” tab if there’s a field for “Include Twilio call SID in final callback.” If not, you might have to store it in a different parameter—some “metadata” or “context” that the final callback picks up.
+
+4. Potential Solutions
+Enforce ElevenLabs to send the same call_sid in the final callback:
+
+Possibly a setting in the ElevenLabs UI for “Inject callSid into final callback body.”
+Or a “meta field” you set in personalization that you request they also send in the final request.
+Add a “caller_phone” dynamic variable in your personalization override:
+
+json
+Copy
+{
+  "dynamic_variables": {
+    "caller_phone": "+15132017748"
+  },
+  "conversation_config_override": { ... }
+}
+…and then in the final callback, you check req.body.dynamic_variables.caller_phone. But that only works if ElevenLabs merges dynamic variables into the final request.
+
+Fallback to Hardcoding if you only have 1 contact. Not recommended, but you can do:
+
+js
+Copy
+if (caller_id === "unknown") {
+  phoneNumber = "+15132017748";
+}
+That obviously fails if you have multiple distinct callers.
+
+5. Conclusion: The Code Looks Fine, But the Callback Lacks Data
+Your new code does attempt the temp_calls approach:
+
+In personalization: INSERT INTO temp_calls (call_sid, phone_number) ....
+In final callback: if (callSid), do SELECT phone_number FROM temp_calls.
+But the final callback has "callSid": NOT PROVIDED, so that logic never triggers. The server can’t do magic if ElevenLabs doesn’t send the same call_sid.
+
+Next Steps:
+
+Double-check ElevenLabs’ agent or Twilio integration settings to pass the exact same call_sid or phone in the final conversation request.
+Alternatively, store your phone in a dynamic variable that the final callback also sends.
+Then your server’s code will pick it up from temp_calls or from the dynamic variable, do the DB insert, and no longer show "caller_id":"unknown".
