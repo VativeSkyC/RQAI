@@ -57,10 +57,27 @@ router.post('/twilio-personalization', async (req, res) => {
       }
 
       // For approved contacts, proceed with personalized interaction
+      const userName = "Chase";
+      const greeting = `Hello ${contact.first_name}, ${userName} asked me to learn more about your professional goals. When you're ready, let me know and we will get started.`;
+      
+      const systemPrompt = `
+You are an AI intake bot focusing on professional relationships for business leaders.
+You have four questions to ask the caller, in this sequence:
+  1) Communication style
+  2) Professional goals
+  3) Values  
+  4) Partnership expectations
+
+After each question, if the caller's answer is unclear, gently ask for clarification.
+Once all four questions are answered, say "Thank you for your time," and end the call.
+
+Ensure to include the entire conversation in 'raw_transcript' in your final callback to /receive-data.
+DO NOT ask any unrelated questions.`;
+
       const response = {
         dynamic_variables: {
           caller_id,
-          call_sid,
+          call_sid, 
           called_number,
           contact_name: contact.first_name,
           contact_status: 'approved',
@@ -68,6 +85,10 @@ router.post('/twilio-personalization', async (req, res) => {
         },
         conversation_config_override: {
           agent: {
+            prompt: {
+              prompt: systemPrompt
+            },
+            first_message: greeting,
             prompt: {
               prompt: `This is ${contact.first_name}. Guide them through these specific questions in order:
 1) What is your preferred communication style?
