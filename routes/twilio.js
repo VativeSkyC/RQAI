@@ -748,6 +748,7 @@ router.post('/receive-data', async (req, res) => {
       const client = await pool.connect();
 
       try {
+        
         await client.query('BEGIN');
 
         let contactResult = await client.query('SELECT id FROM contacts WHERE phone_number = $1', [phoneNumber]);

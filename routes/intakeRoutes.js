@@ -15,7 +15,7 @@ router.post('/receive-data', async (req, res) => {
 
   try {
     // Extract the key data from the request
-    const { caller_id, communication_style, values, professional_goals, partnership_expectations, raw_transcript } = req.body;
+    const { caller_id, call_sid, callSid, communication_style, values, professional_goals, partnership_expectations, raw_transcript } = req.body;
 
     if (!caller_id) {
       console.error('Missing caller_id in request');
@@ -27,6 +27,7 @@ router.post('/receive-data', async (req, res) => {
 
     const extractedData = {
       caller: caller_id,
+      callSid: call_sid || callSid || null,
       communication_style: communication_style || "Not provided",
       values: values || "Not provided",
       professional_goals: professional_goals || "Not provided",
@@ -45,16 +46,32 @@ router.post('/receive-data', async (req, res) => {
 
     console.log('Inserting data directly into intake_responses table...');
 
+    // If we have a callSid, also log it to the call_log table for reference
+    if (extractedData.callSid) {
+      try {
+        await pool.query(`
+          INSERT INTO call_log (call_sid, phone_number, status, created_at)
+          VALUES ($1, $2, $3, NOW())
+          ON CONFLICT (call_sid) DO UPDATE SET status = $3, updated_at = NOW()
+        `, [extractedData.callSid, extractedData.caller, 'intake_received']);
+        console.log(`Updated call_log record for call_sid: ${extractedData.callSid}`);
+      } catch (logError) {
+        console.error('Warning: Failed to update call_log:', logError.message);
+        // Continue processing even if this fails
+      }
+    }
+
     // Direct database insert
     const insertResult = await pool.query(`
       INSERT INTO intake_responses 
-      (phone_number, communication_style, values, professional_goals, 
+      (phone_number, call_sid, communication_style, values, professional_goals, 
        partnership_expectations, raw_transcript, created_at, updated_at)
       VALUES 
-      ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+      ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
       RETURNING id
     `, [
       extractedData.caller,
+      extractedData.callSid,
       extractedData.communication_style, 
       extractedData.values,
       extractedData.professional_goals,
