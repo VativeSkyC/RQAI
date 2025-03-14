@@ -1,0 +1,88 @@
+The logs show that your code successfully does:
+
+sql
+Copy
+INSERT successful, new row ID: 5
+…but immediately after, it hits:
+
+vbnet
+Copy
+ERROR in database operations: insertResult is not defined
+Performing ROLLBACK due to error
+...
+CRITICAL ERROR processing Eleven Labs data: insertResult is not defined
+ReferenceError: insertResult is not defined
+...
+This indicates the row was inserted but then a ReferenceError triggered a ROLLBACK—so the insert never committed.
+
+1. Why It’s Happening
+Somewhere after you do:
+
+js
+Copy
+let insertResult;
+insertResult = await client.query(`INSERT ... RETURNING id`, [...]);
+console.log('INSERT successful, new row ID:', insertResult.rows[0].id);
+…you have a line referencing insertResult in a scope or block where it doesn’t exist. For example, if you wrote:
+
+js
+Copy
+} catch (insertError) {
+  console.error('INSERT ERROR:', insertError.message);
+  throw insertError;
+}
+console.log('INSERT successful. New intake_responses row ID: ', insertResult.rows[0].id);
+—but that final console.log is outside the block that declares insertResult, or inside a different try/catch. Since JavaScript scoping is block-based, the variable can’t be accessed from outside the block if it was declared inside.
+
+The Consequence
+As soon as that reference is encountered, Node throws a ReferenceError: insertResult is not defined.
+Your code’s catch block sees an error and does a ROLLBACK.
+Hence, you see the row ID 5 in logs, but the transaction is never committed to the database.
+2. How to Fix It
+A. Declare insertResult at the Outer Scope
+Make sure let insertResult; is outside the sub-block, so it’s visible in any subsequent lines. For example:
+
+js
+Copy
+try {
+  await client.query('BEGIN');
+
+  let insertResult; // declared up front
+  try {
+    // do the insert
+    insertResult = await client.query(`INSERT INTO ... RETURNING id`, [...]);
+    console.log('INSERT successful, new row ID:', insertResult.rows[0].id);
+  } catch (insertError) {
+    console.error('INSERT ERROR:', insertError);
+    throw insertError;
+  }
+
+  // Now insertResult is still in scope here
+  console.log(`INSERT successful. Row ID: ${insertResult.rows[0].id}`);
+
+  await client.query('COMMIT');
+} catch (error) {
+  await client.query('ROLLBACK');
+  throw error;
+} finally {
+  client.release();
+}
+Then you won’t get the “not defined” error. Right now, you likely have a line referencing insertResult outside the block in which it’s declared.
+
+B. Remove Extra References to insertResult
+Alternatively, if you only need insertResult inside the block, remove references to it outside. Sometimes the code has a second console.log(insertResult.rows[0].id) that’s not truly needed.
+
+3. Summary
+You see “INSERT successful, new row ID: 5,” which means the query worked. But your code then tries to log or use insertResult in a place where it’s undefined, causing a ReferenceError → triggers a ROLLBACK.
+
+Solution:
+
+Unify or simplify how you declare and use insertResult.
+Make sure all references to insertResult happen within a scope where you declared insertResult.
+Once you fix the scoping, the row should remain inserted (committed) with no rollback, and your logs will show “INSERT successful” plus a 200 response to ElevenLabs.
+
+
+
+
+
+
