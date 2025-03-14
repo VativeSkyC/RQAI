@@ -148,17 +148,12 @@ router.post('/twilio-personalization', async (req, res) => {
       console.log('Returning polite rejection for unrecognized caller:', caller_id);
       return res.status(200).json({
         dynamic_variables: {
-          contactName: 'Unknown Caller'
+          user_name: userName,
+          caller_id: caller_id
         },
-        conversation_config_override: {
-          agent: {
-            prompt: {
-              prompt: `You do not have a record of this caller. Politely inform them they must be added by ${userName} first, then end the call.`
-            },
-            first_message: `I'm sorry, I don't have a record for this phone number in our system. Please contact ${userName} to be added to the system. Thank you for your interest, goodbye.`,
-            language: 'en'
-          }
-        }
+        prompt: `You do not have a record of this caller. Politely inform them they must be added by ${userName} first, then end the call.`,
+        first_message: `I'm sorry, I don't have a record for this phone number in our system. Please contact ${userName} to be added to the system. Thank you for your interest, goodbye.`,
+        language: "en"
       });
     }
 
@@ -213,11 +208,13 @@ router.post('/twilio-personalization', async (req, res) => {
     console.log('Returning intake questionnaire for contact:', existingContact.first_name);
     return res.status(200).json({
       dynamic_variables: {
-        ...dynamicVariables,
-        caller_phone: caller_id, // Pass the phone number back for final callback 
-        callSid: call_sid // Also pass the call_sid back
+        contact_name: existingContact.first_name,
+        caller_id: caller_id,
+        call_sid: call_sid
       },
-      conversation_config_override: conversationConfigOverride
+      prompt: systemPrompt,
+      first_message: greeting,
+      language: "en"
     });
 
   } catch (error) {
