@@ -85,9 +85,30 @@ router.post('/twilio-personalization', async (req, res) => {
     }
     console.log('Personalization webhook triggered:', req.body);
 
-    // 3. Look up the contact WITHOUT creating a new one
+    // Store call SID and phone number in temp_calls for lookup during final callback
     const pool = req.app.get('pool');
     const client = await pool.connect();
+
+    try {
+      console.log(`Storing callSid ${call_sid} with phone ${caller_id} in temp_calls`);
+      await client.query('BEGIN');
+
+      // Insert or update the temp_calls record
+      await client.query(`
+        INSERT INTO temp_calls (call_sid, phone_number, created_at) 
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (call_sid) DO UPDATE SET phone_number = EXCLUDED.phone_number
+      `, [call_sid, caller_id]);
+
+      await client.query('COMMIT');
+      console.log(`Successfully stored call data in temp_calls: CallSID=${call_sid}, Phone=${caller_id}`);
+    } catch (tempCallsError) {
+      await client.query('ROLLBACK');
+      console.error('Error storing call info in temp_calls:', tempCallsError.message);
+      // Continue processing even if this fails - don't return an error to ElevenLabs
+    }
+
+    // 3. Look up the contact WITHOUT creating a new one
     let existingContact;
     const userName = "Chase"; // Hardcoded name as specified in the requirements
 
@@ -217,7 +238,7 @@ router.post('/twilio-personalization', async (req, res) => {
 async function parseTranscriptWithOpenAI(transcript) {
   try {
     console.log('Parsing transcript with OpenAI...');
-    
+
     const completion = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       temperature: 0.2,
@@ -230,7 +251,7 @@ async function parseTranscriptWithOpenAI(transcript) {
           2. The caller's professional goals for the next year
           3. The values important to the caller in a professional relationship
           4. The caller's expectations from a professional partnership
-          
+
           Return ONLY a JSON object with these exact field names:
           {
             "communication_style": "extracted answer",
@@ -245,11 +266,11 @@ async function parseTranscriptWithOpenAI(transcript) {
         }
       ]
     });
-    
+
     // Extract the JSON from the response
     const responseText = completion.choices[0].message.content.trim();
     console.log('OpenAI response:', responseText);
-    
+
     // Try to parse the JSON
     try {
       // Find the JSON object in the text (handle cases where there might be extra text)
@@ -261,14 +282,14 @@ async function parseTranscriptWithOpenAI(transcript) {
     } catch (parseError) {
       console.error('Error parsing OpenAI JSON:', parseError.message);
       console.log('Raw response:', responseText);
-      
+
       // Fallback: try to extract fields with regex if JSON parsing fails
       const extractField = (fieldName) => {
         const regex = new RegExp(`"${fieldName}"\\s*:\\s*"([^"]+)"`, 'i');
         const match = responseText.match(regex);
         return match ? match[1] : null;
       };
-      
+
       return {
         communication_style: extractField('communication_style'),
         professional_goals: extractField('professional_goals'),
@@ -428,7 +449,7 @@ router.post('/receive-data', async (req, res) => {
       // First, parse the transcript with OpenAI if we have one
       let parsedData = null;
       const rawTranscript = req.body.raw_transcript || req.body.rawTranscript || req.body.transcript;
-      
+
       if (rawTranscript) {
         console.log('Raw transcript available, attempting OpenAI parsing...');
         parsedData = await parseTranscriptWithOpenAI(rawTranscript);
@@ -440,7 +461,7 @@ router.post('/receive-data', async (req, res) => {
       } else {
         console.log('No raw transcript available for parsing');
       }
-      
+
       const pool = req.app.get('pool');
       const client = await pool.connect();
 
@@ -603,36 +624,36 @@ router.post('/receive-data', async (req, res) => {
         // Declare insertResult at the widest scope needed before any try/catch blocks
         let insertResult = null;
         let intakeId = null;
-        
+
         try {
           // Prioritize parsed data from OpenAI if available
           const communication_style = parsedData?.communication_style || 
                                      communicationStyle || 
                                      req.body.communication_style || 
                                      null;
-                                     
+
           const values_data = parsedData?.values || 
                              values || 
                              req.body.values || 
                              null;
-                             
+
           const professional_goals = parsedData?.professional_goals || 
                                     professionalGoals || 
                                     req.body.professional_goals || 
                                     goals || 
                                     null;
-                                    
+
           const partnership_expectations = parsedData?.partnership_expectations || 
                                           partnershipExpectations || 
                                           req.body.partnership_expectations || 
                                           null;
-          
+
           console.log('=== FINAL DATA FOR DATABASE INSERT ===');
           console.log('- communication_style:', communication_style);
           console.log('- values:', values_data);
           console.log('- professional_goals:', professional_goals);
           console.log('- partnership_expectations:', partnership_expectations);
-          
+
           insertResult = await client.query(
             `INSERT INTO intake_responses (
               contact_id, user_id, communication_style, values, 
@@ -649,7 +670,7 @@ router.post('/receive-data', async (req, res) => {
               rawTranscript || null
             ]
           );
-          
+
           // Store the ID securely right after the query
           intakeId = insertResult && insertResult.rows && insertResult.rows[0] ? insertResult.rows[0].id : null;
           console.log('INSERT successful, new row ID:', intakeId);
