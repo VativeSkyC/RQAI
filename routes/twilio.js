@@ -629,6 +629,7 @@ router.post('/receive-data', async (req, res) => {
           console.log('- professional_goals:', professional_goals);
           console.log('- partnership_expectations:', partnership_expectations);
           
+          // Declare insertResult at a higher scope so it's available throughout the function
           let insertResult;
           insertResult = await client.query(
             `INSERT INTO intake_responses (
@@ -670,6 +671,8 @@ router.post('/receive-data', async (req, res) => {
         }
 
         console.log('Committing transaction (COMMIT)');
+        // Store the intake ID in a variable that's accessible throughout the function
+        let intakeId = insertResult && insertResult.rows && insertResult.rows[0] ? insertResult.rows[0].id : null;
         try {
           await client.query('COMMIT');
           console.log(`Successfully stored Eleven Labs intake data for contact ID ${contactId}, user ID ${userId}`);
@@ -685,7 +688,7 @@ router.post('/receive-data', async (req, res) => {
         return res.status(200).json({ 
           message: 'Data stored successfully',
           contact_id: contactId,
-          intake_id: insertResult.rows[0]?.id
+          intake_id: intakeId
         });
       } catch (error) {
         console.error('ERROR in database operations:', error.message);
