@@ -151,9 +151,15 @@ router.post('/twilio-personalization', async (req, res) => {
           user_name: userName,
           caller_id: caller_id
         },
-        prompt: `You do not have a record of this caller. Politely inform them they must be added by ${userName} first, then end the call.`,
-        first_message: `I'm sorry, I don't have a record for this phone number in our system. Please contact ${userName} to be added to the system. Thank you for your interest, goodbye.`,
-        language: "en"
+        conversation_config_override: {
+          agent: {
+            prompt: {
+              prompt: `You do not have a record of this caller. Politely inform them they must be added by ${userName} first, then end the call.`
+            },
+            first_message: `I'm sorry, I don't have a record for this phone number in our system. Please contact ${userName} to be added to the system. Thank you for your interest, goodbye.`,
+            language: "en"
+          }
+        }
       });
     }
 
@@ -212,9 +218,15 @@ router.post('/twilio-personalization', async (req, res) => {
         caller_id: caller_id,
         call_sid: call_sid
       },
-      prompt: systemPrompt,
-      first_message: greeting,
-      language: "en"
+      conversation_config_override: {
+        agent: {
+          prompt: {
+            prompt: systemPrompt
+          },
+          first_message: greeting,
+          language: "en"
+        }
+      }
     });
 
   } catch (error) {
