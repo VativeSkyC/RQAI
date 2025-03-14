@@ -1,3 +1,7 @@
+
+const express = require('express');
+const router = express.Router();
+
 // Personalization Webhook for ElevenLabs inbound Twilio calls
 router.post('/twilio-personalization', async (req, res) => {
   try {
@@ -85,7 +89,6 @@ router.post('/twilio-personalization', async (req, res) => {
        2) Professional goals
        3) Values
        4) Partnership expectations
-      ...
     `;
 
     // 6. Return the JSON in the format ElevenLabs expects
@@ -124,3 +127,5 @@ router.post('/twilio-personalization', async (req, res) => {
     });
   }
 });
+
+module.exports = router;
