@@ -629,7 +629,8 @@ router.post('/receive-data', async (req, res) => {
           console.log('- professional_goals:', professional_goals);
           console.log('- partnership_expectations:', partnership_expectations);
           
-          const insertResult = await client.query(
+          let insertResult;
+          insertResult = await client.query(
             `INSERT INTO intake_responses (
               contact_id, user_id, communication_style, values, 
               professional_goals, partnership_expectations, raw_transcript, created_at
