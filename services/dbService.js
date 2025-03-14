@@ -1,4 +1,3 @@
-
 // Database service for shared database operations
 
 /**
@@ -39,10 +38,11 @@ const createTables = async (pool) => {
         company_name VARCHAR(100),
         linkedin_url VARCHAR(255),
         user_id INTEGER REFERENCES users(id),
+        is_approved BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    
+
     // Create SMS messages table
     await client.query(`
       CREATE TABLE IF NOT EXISTS sms_messages (
@@ -95,7 +95,7 @@ const createTables = async (pool) => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    
+
     // Create permanent call_log table for debugging and recovery
     await client.query(`
       CREATE TABLE IF NOT EXISTS call_log (
@@ -115,10 +115,10 @@ const createTables = async (pool) => {
         WHERE table_name = 'intake_responses'
       )
     `);
-    
+
     if (tableCheckResult.rows[0].exists) {
       console.log('Intake responses table exists, checking for required columns...');
-      
+
       // Check for each required column and add if missing
       // Note: Removed 'goals' from the list as it's not part of the new intake flow
       // and added the four specific columns needed for the intake questionnaire
@@ -126,7 +126,7 @@ const createTables = async (pool) => {
         'user_id', 'communication_style', 'values', 
         'professional_goals', 'partnership_expectations', 'raw_transcript'
       ];
-      
+
       for (const column of requiredColumns) {
         const columnExists = await client.query(`
           SELECT EXISTS (
@@ -134,7 +134,7 @@ const createTables = async (pool) => {
             WHERE table_name = 'intake_responses' AND column_name = $1
           )
         `, [column]);
-        
+
         if (!columnExists.rows[0].exists) {
           console.log(`Adding missing column '${column}' to intake_responses table`);
           await client.query(`ALTER TABLE intake_responses ADD COLUMN ${column} TEXT`);
@@ -159,7 +159,7 @@ const createTables = async (pool) => {
         )
       `);
     }
-    
+
     await client.query('COMMIT');
     console.log('Database schema updated for relationship management');
   } catch (error) {

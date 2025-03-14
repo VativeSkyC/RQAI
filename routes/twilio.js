@@ -13,20 +13,13 @@ router.post('/twilio-personalization', async (req, res) => {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
-    // Extract data from ElevenLabs request
-    if (!caller_id || !call_sid) {
-      console.error('Missing caller_id or call_sid in personalization webhook');
-      return res.status(400).json({ error: 'Invalid payload' });
-    }
-    console.log('Personalization webhook triggered:', req.body);
-
     // Look up contact info
     const pool = req.app.get('pool');
     const client = await pool.connect();
 
     try {
       const findContact = await client.query(`
-        SELECT id, first_name, last_name, user_id 
+        SELECT id, first_name, last_name, user_id, is_approved
         FROM contacts 
         WHERE phone_number = $1 
         LIMIT 1
@@ -37,29 +30,51 @@ router.post('/twilio-personalization', async (req, res) => {
         INSERT INTO call_log (call_sid, phone_number, status, created_at)
         VALUES ($1, $2, $3, NOW()) 
         ON CONFLICT (call_sid) DO NOTHING
-      `, [call_sid, caller_id, findContact.rows.length > 0 ? 'existing_contact' : 'new_contact']);
+      `, [call_sid, caller_id, findContact.rows.length > 0 ? 'existing_contact' : 'unauthorized']);
 
       const contact = findContact.rows[0];
+      
+      // If contact doesn't exist or isn't approved, return polite rejection
+      if (!contact || !contact.is_approved) {
+        const response = {
+          dynamic_variables: {
+            caller_id,
+            call_sid,
+            called_number,
+            contact_status: 'unauthorized'
+          },
+          conversation_config_override: {
+            agent: {
+              prompt: {
+                prompt: "This is an unauthorized caller. Politely inform them they need to be added to access this service."
+              },
+              first_message: "I apologize, but this service is currently only available to approved contacts. Please contact RQ to learn more about getting access. Thank you for your interest!",
+              language: "en"
+            }
+          }
+        };
+        return res.status(200).json(response);
+      }
 
-      // Prepare response data
+      // For approved contacts, proceed with personalized interaction
       const response = {
         dynamic_variables: {
           caller_id,
           call_sid,
           called_number,
-          contact_name: contact ? contact.first_name : 'Unknown',
-          contact_status: contact ? 'existing' : 'new'
+          contact_name: contact.first_name,
+          contact_status: 'approved'
         },
         conversation_config_override: {
           agent: {
             prompt: {
-              prompt: contact 
-                ? `This is an existing contact named ${contact.first_name}. Focus on learning about their: 1) Communication style, 2) Professional goals, 3) Values, 4) Partnership expectations.`
-                : `This is a new contact. Politely gather their name and then learn about their: 1) Communication style, 2) Professional goals, 3) Values, 4) Partnership expectations.`
+              prompt: `This is ${contact.first_name}. Guide them through these specific questions in order:
+1) What is your preferred communication style?
+2) What are your key professional goals?
+3) What values are most important to you?
+4) What do you expect from professional partnerships?`
             },
-            first_message: contact
-              ? `Hello ${contact.first_name}, I'd like to learn more about your professional goals. Shall we begin?`
-              : "Hello! I'd like to learn more about you and your professional goals. Could you start by telling me your name?",
+            first_message: `Hello ${contact.first_name}! I'd like to learn more about your professional preferences and goals. Shall we begin with your preferred communication style?`,
             language: "en"
           }
         }
