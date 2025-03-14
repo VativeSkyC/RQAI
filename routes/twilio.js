@@ -19,7 +19,7 @@ router.post('/twilio-personalization', async (req, res) => {
 
     try {
       const findContact = await client.query(`
-        SELECT id, first_name, last_name, user_id, is_approved
+        SELECT id, first_name, last_name, user_id
         FROM contacts 
         WHERE phone_number = $1 
         LIMIT 1
@@ -35,7 +35,7 @@ router.post('/twilio-personalization', async (req, res) => {
       const contact = findContact.rows[0];
       
       // If contact doesn't exist or isn't approved, return polite rejection
-      if (!contact || !contact.is_approved) {
+      if (!contact) {
         const response = {
           dynamic_variables: {
             caller_id,
