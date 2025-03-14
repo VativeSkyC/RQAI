@@ -63,7 +63,8 @@ router.post('/twilio-personalization', async (req, res) => {
           call_sid,
           called_number,
           contact_name: contact.first_name,
-          contact_status: 'approved'
+          contact_status: 'approved',
+          raw_transcript: ''
         },
         conversation_config_override: {
           agent: {
