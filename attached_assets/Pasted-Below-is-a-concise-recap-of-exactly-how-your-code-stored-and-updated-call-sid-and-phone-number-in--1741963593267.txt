@@ -1,0 +1,114 @@
+Below is a concise recap of exactly how your code stored (and updated) call_sid and phone_number in the temp_calls table, drawing from the snippets you posted:
+
+1. In the /voice Route (When Twilio First Hits Your Server)
+File: twilio.js (or similar), inside router.post('/voice', ...)
+
+js
+Copy
+router.post('/voice', async (req, res) => {
+  const { From, CallSid } = req.body;  // From = caller's phone, CallSid = Twilio call SID
+  console.log('Incoming call received. CallSid:', CallSid, 'From:', From);
+
+  try {
+    const pool = req.app.get('pool');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // 1) Insert into temp_calls so you can track the immediate call details
+      await client.query(
+        `INSERT INTO temp_calls (call_sid, phone_number, created_at)
+         VALUES ($1, $2, NOW())`,
+        [CallSid, From]
+      );
+
+      // 2) Also store in call_log (for debugging or a permanent record)
+      await client.query(
+        `INSERT INTO call_log (call_sid, phone_number, created_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (call_sid) DO NOTHING`,
+        [CallSid, From]
+      );
+
+      await client.query('COMMIT');
+      console.log(`Call from ${From} with SID ${CallSid} successfully logged`);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    // Then you redirect to ElevenLabs
+    // ...
+});
+Why:
+Twilio sends the initial inbound call to your /voice endpoint. You grab CallSid and From from req.body. You INSERT both into temp_calls, so you have a quick reference of which phone number is associated with that call_sid.
+
+2. In the /twilio-personalization Route (When ElevenLabs Requests Context)
+File: twilio.js (or wherever you handle personalization), inside router.post('/twilio-personalization', ...)
+
+js
+Copy
+router.post('/twilio-personalization', async (req, res) => {
+  try {
+    // Possibly verify x-el-secret if ELEVENLABS_SECRET is set
+    const { caller_id, call_sid } = req.body || {};
+    if (!caller_id || !call_sid) {
+      return res.status(400).json({ error: 'Invalid payload' });
+    }
+
+    const pool = req.app.get('pool');
+    const client = await pool.connect();
+    try {
+      console.log(`Storing callSid ${call_sid} with phone ${caller_id} in temp_calls`);
+      await client.query('BEGIN');
+
+      // 1) Insert or update temp_calls in case we need the phone number again
+      await client.query(`
+        INSERT INTO temp_calls (call_sid, phone_number, created_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (call_sid) DO UPDATE
+          SET phone_number = EXCLUDED.phone_number
+      `, [call_sid, caller_id]);
+
+      await client.query('COMMIT');
+      console.log(`Successfully stored call data in temp_calls: CallSID=${call_sid}, Phone=${caller_id}`);
+    } catch (tempCallsError) {
+      await client.query('ROLLBACK');
+      console.error('Error storing call info in temp_calls:', tempCallsError.message);
+      // but you do NOT return an error to ElevenLabs, so it continues
+    } finally {
+      client.release();
+    }
+
+    // Then the rest of the logic: look up contact, return conversation_config_override, etc.
+    // ...
+});
+Why:
+When ElevenLabs calls your personalization webhook, it also passes call_sid and caller_id. You again insert or update temp_calls with (call_sid, caller_id) to ensure you have the correct number for that call_sid. The code uses ON CONFLICT (call_sid) DO UPDATE so if it already existed, you just update the phone number. This is helpful if Twilio’s /voice route had From in a different format, or if you want to override it with whatever ElevenLabs passes.
+
+3. How the Data Was Used Later
+In your final callback (POST /receive-data from ElevenLabs), you typically do:
+
+js
+Copy
+// If the final callback only has a call_sid, we can match it in temp_calls
+let callResult = await client.query(
+  'SELECT phone_number FROM temp_calls WHERE call_sid = $1',
+  [callSid]
+);
+if (callResult.rows.length > 0) {
+  phoneNumber = callResult.rows[0].phone_number;
+  console.log(`Found phone number ${phoneNumber} for callSid: ${callSid}`);
+}
+Why:
+If the final callback only includes call_sid (and not the phone number), you can look it up in temp_calls to unify the record.
+
+4. Summary
+When Twilio first hits /voice, you do INSERT INTO temp_calls (call_sid, phone_number) so you can log the call SID and caller phone.
+When ElevenLabs calls /twilio-personalization asking for conversation details, you again do an upsert to temp_calls in case caller_id changed or was formatted differently.
+Finally, in your final callback /receive-data, you can do SELECT phone_number FROM temp_calls WHERE call_sid = $1 if you only have callSid.
+This entire process ensures your final callback can unify the callSid → phoneNumber → contact logic, even if the final request only has a call SID (or different phone formatting).
+
+That’s exactly how you “stored the data in the temp_calls table” in your older code.
