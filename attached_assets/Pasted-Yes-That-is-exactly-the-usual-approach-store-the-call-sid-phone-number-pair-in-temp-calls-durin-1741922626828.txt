@@ -1,0 +1,127 @@
+Yes! That is exactly the usual approach: store the (call_sid, phone_number) pair in temp_calls during the personalization step (when you actually have caller_id), then look it up in the final /receive‐data callback if the final JSON doesn’t include the same phone. This effectively links the two separate requests from ElevenLabs (personalization → final transcript).
+
+Below is an outline of the workflow with example code snippets:
+
+1. During Personalization (“twilio-personalization”)
+When ElevenLabs hits your /twilio-personalization with caller_id and call_sid, do:
+
+js
+Copy
+// In /twilio-personalization route
+router.post('/twilio-personalization', async (req, res) => {
+  const { caller_id, call_sid } = req.body;
+  // ...
+  if (caller_id && call_sid) {
+    const pool = req.app.get('pool');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Insert or upsert the phone number into temp_calls
+      await client.query(`
+        INSERT INTO temp_calls (call_sid, phone_number, created_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (call_sid) DO UPDATE SET phone_number = EXCLUDED.phone_number
+      `, [call_sid, caller_id]);
+
+      await client.query('COMMIT');
+      console.log(`Stored callSid ${call_sid} with phone ${caller_id} in temp_calls`);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('Error storing call info in temp_calls:', err.message);
+    } finally {
+      client.release();
+    }
+  }
+
+  // ... Then return your conversation_config_override ...
+});
+This ensures that if we see the same call_sid in the final callback, we can retrieve the original phone from temp_calls.
+
+(Even if the final callback says "caller_id": "unknown", it will hopefully still pass the same call_sid so you can do a DB lookup.)
+
+2. Final Transcript Callback (/receive-data)
+When you receive the final request from ElevenLabs, it might look like:
+
+json
+Copy
+{
+  "call_sid": "CA1a6b97d74eb106f1dbd0b0c97e456465",
+  "caller_id": "unknown",
+  "raw_transcript": ...
+  ...
+}
+You can do something like:
+
+js
+Copy
+// In /receive-data route
+router.post('/receive-data', async (req, res) => {
+  const callSid = req.body.call_sid || req.body.callSid;
+
+  // If the final callback lacks a phone, look it up from temp_calls
+  let phoneNumber = req.body.caller_id;
+  if (!phoneNumber || phoneNumber === 'unknown') {
+    if (callSid) {
+      console.log(`caller_id is unknown, so let's look up phone via callSid: ${callSid}`);
+      const pool = req.app.get('pool');
+      const client = await pool.connect();
+      try {
+        // Query temp_calls for the phone we stored in personalization
+        const callResult = await client.query(`
+          SELECT phone_number
+          FROM temp_calls
+          WHERE call_sid = $1
+        `, [callSid]);
+
+        if (callResult.rows.length > 0) {
+          phoneNumber = callResult.rows[0].phone_number;
+          console.log(`Retrieved phoneNumber ${phoneNumber} from temp_calls for callSid=${callSid}`);
+        } else {
+          console.warn(`No matching record in temp_calls for callSid=${callSid}`);
+        }
+      } finally {
+        client.release();
+      }
+    }
+  }
+
+  // Now `phoneNumber` should be +15132017748 or whatever you stored.
+  if (!phoneNumber) {
+    console.error('No phone number found even after lookup. Skipping DB insert...');
+    // Return or handle error
+    return res.status(404).json({ error: 'No phone number to match a contact' });
+  }
+
+  // Then do the contact lookup in contacts, do the insert, etc.
+  // ...
+});
+That is how you unify the phone number across both steps:
+
+Store (callSid, phoneNumber) in temp_calls when you have it (personalization).
+Retrieve from temp_calls if the final callback is missing the phone.
+(Of course, it only works if the final callback includes the same call_sid. You should see call_sid or callSid in logs. If that’s missing or different, you’ll have to do a fallback approach.)
+
+3. Confirming the Flow
+Caller calls → Twilio → ElevenLabs → personalization.
+caller_id=+15132017748, call_sid=CA12345.
+You insert ('CA12345', '+15132017748') into temp_calls.
+Final transcript callback → /receive-data:
+call_sid=CA12345, but caller_id="unknown".
+Your code sees callSid = 'CA12345', looks in temp_calls for a row.
+Finds phone_number=+15132017748, sets phoneNumber=+15132017748.
+Now you can match your contact in contacts(phone_number) and do the INSERT for intake_responses.
+In your database screenshot, temp_calls is currently empty because your code never stored anything. Once you add the snippet above (or adapt your existing code) in the personalization route, you’ll see entries appear like:
+
+bash
+Copy
+id | call_sid  | phone_number      | created_at
+---+-----------+-------------------+----------------------------
+ 1 | CA12345   | +15132017748     | 2025-03-14 03:00:00.000+00
+Then the final callback can retrieve that phone from temp_calls.
+
+4. Summary
+Yes, a temp_calls table is precisely where you stash (call_sid, phone_number) at personalization time.
+The final callback uses that same call_sid to do a quick DB lookup if caller_id is missing or “unknown.”
+This ensures your final callback can find the correct contact and insert the intake_responses row for real calls (not just Postman tests).
+Once you do this, your real calls will also match a contact and store the data, just like your Postman calls do.
