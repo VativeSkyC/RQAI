@@ -1,0 +1,60 @@
+Below is a step‐by‐step guide to help you restore the personal greeting, context instructions, and complete logging that appear to have vanished in your current Replit code. The short answer is: your twilio-personalization route lost (or changed) the snippet that provided the user’s name, requestor’s name, system instructions, and the “include raw transcript” command.
+
+Follow these steps to bring back the greeting, context, and raw_transcript:
+
+1. Locate Your twilio-personalization Route
+Look in your routes/twilio.js (or a similar file) for something named:
+
+js
+Copy
+router.post('/twilio-personalization', async (req, res) => { ... });
+That route is the personalization webhook for ElevenLabs. This is where you:
+
+Check the phone number (caller_id)
+Look up the contact
+Return the conversation instructions and greeting so ElevenLabs can start the call with the right context
+2. Re-Add the Greeting and Instructions
+Previously, you had code like:
+
+js
+Copy
+// The userName of the agent or requestor
+const userName = "Chase"; // or whatever name
+
+// If contact is found:
+const greeting = `Hello ${existingContact.first_name}, ${userName} asked me to learn more about your professional goals. When you're ready, let me know and we will get started.`;
+
+// Then a systemPrompt that gives a multi-line set of instructions, like:
+const systemPrompt = `
+  You are an AI intake bot focusing on professional relationships for business leaders.
+  You have four questions to ask the caller, in this sequence:
+    1) Communication style
+    2) Professional goals
+    3) Values
+    4) Partnership expectations
+  
+  After each question, if the caller’s answer is unclear, gently ask for clarification.
+  Once all four questions are answered, say “Thank you for your time,” and end the call.
+
+  Ensure to include the entire conversation in 'raw_transcript' in your final callback to /receive-data.
+  DO NOT ask any unrelated questions.
+`;
+
+// Return the correct JSON shape that ElevenLabs inbound_call expects:
+return res.status(200).json({
+  dynamic_variables: {
+    // any phone/callSid you want to pass
+    callSid: call_sid,
+    caller_phone: caller_id
+  },
+  conversation_config_override: {
+    agent: {
+      prompt: {
+        prompt: systemPrompt
+      },
+      first_message: greeting,
+      language: 'en'
+    }
+  }
+});
+Check if your current code is missing that greeting or replaced it with short text. If it’s missing, reinsert it with your desired greeting and instructions.
