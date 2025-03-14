@@ -6,12 +6,7 @@ const authMiddleware = require('../middleware/auth');
 // IMPORTANT: Special handling for ElevenLabs webhook with HMAC verification
 const crypto = require('crypto');
 
-// Configure express to preserve raw body for HMAC verification
-router.use(express.json({
-  verify: (req, res, buf) => {
-    req.rawBody = buf;
-  }
-}));
+
 
 router.post('/receive-data', async (req, res) => {
   // Verify HMAC signature if secret is configured

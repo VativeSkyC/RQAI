@@ -76,7 +76,15 @@ app.use('/', authRoutes);
 app.use('/contacts', contactRoutes);
 app.use('/', messagingRoutes);
 app.use('/', twilioRoutes); // Keep the root path for twilio endpoints
-app.use('/', intakeRoutes); // Add the new intake routes
+// Configure HMAC verification middleware specifically for receive-data route
+app.use('/receive-data', express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}), intakeRoutes);
+
+// Mount other intake routes normally
+app.use('/', intakeRoutes);
 
 // Redirect to the static version of the interface
 app.get('/old-interface', (req, res) => {
