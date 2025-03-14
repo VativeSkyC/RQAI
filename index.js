@@ -71,16 +71,12 @@ const initializeDatabase = () => {
 
 initializeDatabase();
 
-// Import admin routes
-const adminRoutes = require('./routes/admin');
-
 // Register route modules
 app.use('/', authRoutes);
 app.use('/contacts', contactRoutes);
 app.use('/', messagingRoutes);
 app.use('/', twilioRoutes); // Keep the root path for twilio endpoints
 app.use('/', intakeRoutes); // Add the new intake routes
-app.use('/admin', adminRoutes); // Add admin routes for maintenance tasks
 
 // Redirect to the static version of the interface
 app.get('/old-interface', (req, res) => {
@@ -147,18 +143,10 @@ const keepAlive = () => {
   }, 20000); // Every 20 seconds
 };
 
-// Scheduled cleanup for temp_calls table with configurable retention
+// Scheduled cleanup for temp_calls table with longer retention
 setInterval(async () => {
-  try {
-    const pool = req.app.get('pool');
-    if (pool) {
-      // Keep temp_calls for 12 hours by default (more than enough for call completion)
-      await dbService.cleanupTempCalls(pool, '12 hours');
-    }
-  } catch (error) {
-    console.error('Scheduled temp_calls cleanup failed:', error.message);
-  }
-}, 3 * 60 * 60 * 1000); // Run every 3 hours
+  await dbService.cleanupTempCalls(pool);
+}, 60 * 60 * 1000); // Every 60 minutes
 
 // Enhanced healthcheck endpoint for uptime monitoring
 app.get('/ping', async (req, res) => {
