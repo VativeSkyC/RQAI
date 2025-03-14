@@ -44,10 +44,23 @@ router.post('/receive-data', async (req, res) => {
       throw new Error('Database connection not available');
     }
 
-    console.log('Inserting data directly into intake_responses table...');
+    console.log('First, storing call information in temp_calls...');
 
-    // If we have a callSid, also log it to the call_log table for reference
+    // Store the call info in temp_calls table if we have a callSid
     if (extractedData.callSid) {
+      try {
+        await pool.query(`
+          INSERT INTO temp_calls (call_sid, phone_number, created_at)
+          VALUES ($1, $2, NOW())
+          ON CONFLICT (call_sid) DO UPDATE SET phone_number = $2, created_at = NOW()
+        `, [extractedData.callSid, extractedData.caller]);
+        console.log(`Stored call information in temp_calls table: ${extractedData.callSid} -> ${extractedData.caller}`);
+      } catch (tempCallError) {
+        console.error('Error storing in temp_calls:', tempCallError.message);
+        // Continue processing even if this fails
+      }
+
+      // Log to call_log for reference
       try {
         await pool.query(`
           INSERT INTO call_log (call_sid, phone_number, status, created_at)
@@ -61,17 +74,37 @@ router.post('/receive-data', async (req, res) => {
       }
     }
 
-    // Direct database insert
+    // Lookup phone_number from temp_calls for more reliable identification
+    let phoneNumber = extractedData.caller;
+    try {
+      const phoneResult = await pool.query(
+        'SELECT phone_number FROM temp_calls WHERE phone_number = $1 ORDER BY created_at DESC LIMIT 1',
+        [extractedData.caller]
+      );
+
+      if (phoneResult.rows.length > 0) {
+        phoneNumber = phoneResult.rows[0].phone_number;
+        console.log(`Found matching phone number in temp_calls: ${phoneNumber}`);
+      } else {
+        console.log(`No matching phone number found in temp_calls, using caller directly: ${phoneNumber}`);
+      }
+    } catch (lookupError) {
+      console.error('Error looking up phone number:', lookupError.message);
+      // Continue with the caller ID from the request
+    }
+
+    console.log('Inserting data into intake_responses table...');
+
+    // Direct database insert into intake_responses (without call_sid column)
     const insertResult = await pool.query(`
       INSERT INTO intake_responses 
-      (phone_number, call_sid, communication_style, values, professional_goals, 
+      (phone_number, communication_style, values, professional_goals, 
        partnership_expectations, raw_transcript, created_at, updated_at)
       VALUES 
-      ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+      ($1, $2, $3, $4, $5, $6, NOW(), NOW())
       RETURNING id
     `, [
-      extractedData.caller,
-      extractedData.callSid,
+      phoneNumber,
       extractedData.communication_style, 
       extractedData.values,
       extractedData.professional_goals,
