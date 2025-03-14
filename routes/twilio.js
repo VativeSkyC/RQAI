@@ -600,6 +600,10 @@ router.post('/receive-data', async (req, res) => {
         console.log('- partnership_expectations:', partnershipExpectations || null);
         console.log('- raw_transcript:', rawTranscript ? 'Present' : 'Null');
 
+        // Declare insertResult at the widest scope needed before any try/catch blocks
+        let insertResult = null;
+        let intakeId = null;
+        
         try {
           // Prioritize parsed data from OpenAI if available
           const communication_style = parsedData?.communication_style || 
@@ -629,8 +633,6 @@ router.post('/receive-data', async (req, res) => {
           console.log('- professional_goals:', professional_goals);
           console.log('- partnership_expectations:', partnership_expectations);
           
-          // Declare insertResult at a higher scope so it's available throughout the function
-          let insertResult;
           insertResult = await client.query(
             `INSERT INTO intake_responses (
               contact_id, user_id, communication_style, values, 
@@ -647,7 +649,10 @@ router.post('/receive-data', async (req, res) => {
               rawTranscript || null
             ]
           );
-          console.log('INSERT successful, new row ID:', insertResult.rows[0]?.id);
+          
+          // Store the ID securely right after the query
+          intakeId = insertResult && insertResult.rows && insertResult.rows[0] ? insertResult.rows[0].id : null;
+          console.log('INSERT successful, new row ID:', intakeId);
         } catch (insertError) {
           console.error('INSERT ERROR:', insertError.message);
           console.error('INSERT DETAIL:', insertError.detail);
@@ -655,7 +660,7 @@ router.post('/receive-data', async (req, res) => {
           throw insertError; // Re-throw for the outer catch block
         }
 
-        console.log(`INSERT successful. New intake_responses row ID: ${insertResult.rows[0]?.id || 'unknown'}`);
+        console.log(`INSERT successful. New intake_responses row ID: ${intakeId || 'unknown'}`);
 
         // Update call_log to mark as processed if we have a callSid
         if (callSid) {
@@ -671,8 +676,6 @@ router.post('/receive-data', async (req, res) => {
         }
 
         console.log('Committing transaction (COMMIT)');
-        // Store the intake ID in a variable that's accessible throughout the function
-        let intakeId = insertResult && insertResult.rows && insertResult.rows[0] ? insertResult.rows[0].id : null;
         try {
           await client.query('COMMIT');
           console.log(`Successfully stored Eleven Labs intake data for contact ID ${contactId}, user ID ${userId}`);
