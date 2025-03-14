@@ -57,9 +57,6 @@ router.post('/twilio-personalization', async (req, res) => {
       }
 
       // For approved contacts, proceed with personalized interaction
-      const userName = "Chase";
-      const greeting = `Hello ${contact.first_name}, ${userName} asked me to learn more about your professional goals. When you're ready, let me know and we will get started.`;
-      
       const systemPrompt = `
 You are an AI intake bot focusing on professional relationships for business leaders.
 You have four questions to ask the caller, in this sequence:
@@ -90,14 +87,6 @@ DO NOT ask any unrelated questions.`;
             },
             first_message: `Hello ${contact.first_name}, Chase asked me to learn more about your professional goals. When you're ready, let me know and we will get started.`,
             language: 'en'
-          }
-        }
-2) What are your key professional goals?
-3) What values are most important to you?
-4) What do you expect from professional partnerships?`
-            },
-            first_message: `Hello ${contact.first_name}! I'd like to learn more about your professional preferences and goals. Shall we begin with your preferred communication style?`,
-            language: "en"
           }
         }
       };
