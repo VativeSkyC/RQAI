@@ -77,7 +77,7 @@ DO NOT ask any unrelated questions.`;
       const response = {
         dynamic_variables: {
           caller_id,
-          call_sid, 
+          call_sid,
           called_number,
           contact_name: contact.first_name,
           contact_status: 'approved',
@@ -88,10 +88,10 @@ DO NOT ask any unrelated questions.`;
             prompt: {
               prompt: systemPrompt
             },
-            first_message: greeting,
-            prompt: {
-              prompt: `This is ${contact.first_name}. Guide them through these specific questions in order:
-1) What is your preferred communication style?
+            first_message: `Hello ${contact.first_name}, Chase asked me to learn more about your professional goals. When you're ready, let me know and we will get started.`,
+            language: 'en'
+          }
+        }
 2) What are your key professional goals?
 3) What values are most important to you?
 4) What do you expect from professional partnerships?`
