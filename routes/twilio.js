@@ -5,12 +5,12 @@ const router = express.Router();
 // Personalization Webhook for ElevenLabs inbound Twilio calls
 router.post('/twilio-personalization', async (req, res) => {
   try {
-    // 1. (Optional) Verify a secret header if configured
-    const expectedSecret = process.env.ELEVENLABS_SECRET;
-    const incomingSecret = req.headers['x-el-secret'];
-    if (expectedSecret && expectedSecret !== incomingSecret) {
-      console.log('Invalid or missing x-el-secret in personalization webhook');
-      return res.status(403).json({ error: 'Unauthorized' });
+    const { caller_id, agent_id, called_number, call_sid } = req.body;
+    console.log('Received personalization request:', { caller_id, agent_id, called_number, call_sid });
+
+    if (!caller_id || !call_sid) {
+      console.error('Missing required parameters');
+      return res.status(400).json({ error: 'Missing required parameters' });
     }
 
     // 2. Extract data from ElevenLabs request
@@ -25,90 +25,52 @@ router.post('/twilio-personalization', async (req, res) => {
     const pool = req.app.get('pool');
     const client = await pool.connect();
 
-    let existingContact;
-    const userName = "Chase"; // For greeting
+    // Look up contact info
+    const findContact = await client.query(`
+      SELECT id, first_name, last_name, user_id 
+      FROM contacts 
+      WHERE phone_number = $1 
+      LIMIT 1
+    `, [caller_id]);
 
-    try {
-      const findContact = await client.query(`
-        SELECT id, first_name, last_name, user_id
-        FROM contacts
-        WHERE phone_number = $1
-        LIMIT 1
-      `, [caller_id]);
+    // Log the call
+    await client.query(`
+      INSERT INTO call_log (call_sid, phone_number, status, created_at)
+      VALUES ($1, $2, $3, NOW()) 
+      ON CONFLICT (call_sid) DO NOTHING
+    `, [call_sid, caller_id, findContact.rows.length > 0 ? 'existing_contact' : 'new_contact']);
 
-      if (findContact.rows.length > 0) {
-        existingContact = findContact.rows[0];
-        console.log('Found existing contact:', existingContact);
-
-        // Log to call_log
-        await client.query(`
-          INSERT INTO call_log (call_sid, phone_number, status, created_at)
-          VALUES ($1, $2, $3, NOW()) 
-          ON CONFLICT (call_sid) DO NOTHING
-        `, [call_sid, caller_id, 'existing_contact_personalization']);
-      } else {
-        console.log('No existing contact for phone:', caller_id);
-
-        // Log unrecognized caller
-        await client.query(`
-          INSERT INTO call_log (call_sid, phone_number, status, created_at)
-          VALUES ($1, $2, $3, NOW()) 
-          ON CONFLICT (call_sid) DO NOTHING
-        `, [call_sid, caller_id, 'unrecognized_caller']);
-      }
+    const contact = findContact.rows[0];
     } finally {
       client.release();
     }
 
-    // 4. If contact not found, politely reject the caller
-    if (!existingContact) {
-      console.log('Returning polite rejection for unrecognized caller:', caller_id);
-      return res.status(200).json({
-        dynamic_variables: {
-          contactName: 'Unknown Caller'
-        },
-        conversation_config_override: {
-          agent: {
-            prompt: {
-              prompt: `No record for this phone number. Ask them to contact Chase for adding them to the system.`
-            },
-            first_message: `I'm sorry, we don't have a record for this phone number. Please contact Chase. Goodbye.`,
-            language: 'en'
-          }
-        }
-      });
-    }
-
-    // 5. If contact found, build your intake conversation details
-    const greeting = `Hello ${existingContact.first_name}, ${userName} asked me to learn more about your professional goals. When you're ready, let me know and we will begin.`;
-
-    const systemPrompt = `
-      You are an AI intake bot focusing on professional relationships for business leaders.
-      You have four questions to ask:
-       1) Communication style
-       2) Professional goals
-       3) Values
-       4) Partnership expectations
-    `;
-
-    // 6. Return the JSON in the format ElevenLabs expects
-    console.log('Returning personalization data for contact:', existingContact.first_name);
-    return res.status(200).json({
+    // Prepare response data
+    const response = {
       dynamic_variables: {
-        caller_phone: caller_id,
-        call_sid: call_sid,
-        contactName: existingContact.first_name
+        caller_id,
+        call_sid,
+        called_number,
+        contact_name: contact ? contact.first_name : 'Unknown',
+        contact_status: contact ? 'existing' : 'new'
       },
       conversation_config_override: {
         agent: {
           prompt: {
-            prompt: systemPrompt
+            prompt: contact 
+              ? `This is an existing contact named ${contact.first_name}. Focus on learning about their: 1) Communication style, 2) Professional goals, 3) Values, 4) Partnership expectations.`
+              : `This is a new contact. Politely gather their name and then learn about their: 1) Communication style, 2) Professional goals, 3) Values, 4) Partnership expectations.`
           },
-          first_message: greeting,
-          language: 'en'
+          first_message: contact
+            ? `Hello ${contact.first_name}, I'd like to learn more about your professional goals. Shall we begin?`
+            : "Hello! I'd like to learn more about you and your professional goals. Could you start by telling me your name?",
+          language: "en"
         }
       }
-    });
+    };
+
+    console.log('Sending personalization response:', response);
+    return res.status(200).json(response);
 
   } catch (error) {
     console.error('Error in personalization webhook:', error.message);
