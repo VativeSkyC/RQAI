@@ -2,6 +2,54 @@
 const express = require('express');
 const router = express.Router();
 
+// Voice route for initial Twilio call
+router.post('/voice', async (req, res) => {
+  const { From, CallSid } = req.body;
+  console.log('Incoming call received. CallSid:', CallSid, 'From:', From);
+
+  try {
+    const pool = req.app.get('pool');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Store in temp_calls so we can track the immediate call details
+      await client.query(
+        'INSERT INTO temp_calls (call_sid, phone_number, created_at) VALUES ($1, $2, NOW())',
+        [CallSid, From]
+      );
+
+      // Also store in call_log for debugging or a permanent record
+      await client.query(
+        `INSERT INTO call_log (call_sid, phone_number, status, created_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (call_sid) DO NOTHING`,
+        [CallSid, From, 'initiated']
+      );
+
+      await client.query('COMMIT');
+      console.log(`Call from ${From} with SID ${CallSid} successfully logged in temp_calls and call_log`);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error storing call data:', error.message);
+    } finally {
+      client.release();
+    }
+
+    // Continue with your existing Twilio voice response here
+    // This TwiML response would redirect to ElevenLabs or handle the call
+    res.set('Content-Type', 'text/xml');
+    res.send(`
+      <Response>
+        <Say>We're connecting you to our AI agent.</Say>
+      </Response>
+    `);
+  } catch (error) {
+    console.error('Error in voice endpoint:', error.message);
+    res.status(500).send('Server error');
+  }
+});
+
 // Personalization Webhook for ElevenLabs inbound Twilio calls
 router.post('/twilio-personalization', async (req, res) => {
   try {
@@ -18,6 +66,14 @@ router.post('/twilio-personalization', async (req, res) => {
     const client = await pool.connect();
 
     try {
+      // Store/update in temp_calls to ensure consistent tracking
+      await client.query(`
+        INSERT INTO temp_calls (call_sid, phone_number, created_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (call_sid) DO UPDATE SET phone_number = EXCLUDED.phone_number
+      `, [call_sid, caller_id]);
+      
+      console.log(`Updated temp_calls with call_sid: ${call_sid}, phone_number: ${caller_id}`);
       const findContact = await client.query(`
         SELECT id, first_name, last_name, user_id
         FROM contacts 
