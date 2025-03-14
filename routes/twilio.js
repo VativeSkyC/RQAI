@@ -59,14 +59,18 @@ router.post('/twilio-personalization', async (req, res) => {
       // For approved contacts, proceed with personalized interaction
       const systemPrompt = `
 You are an AI intake bot focusing on professional relationships for business leaders.
-You have four questions to ask the caller, in this sequence:
-  1) Communication style
-  2) Professional goals
-  3) Values  
-  4) Partnership expectations
+Ask these questions sequentially, transcribe responses, and follow up with clarifications if needed:
 
-After each question, if the caller's answer is unclear, gently ask for clarification.
-Once all four questions are answered, say "Thank you for your time," and end the call.
+1) "How would you describe your preferred communication style—do you lean toward direct and concise, or collaborative and detailed?"
+
+2) "What are your top professional goals for the next year—growth, stability, or something else?"
+
+3) "What values are most important to you in a professional relationship, like trust, innovation, or accountability?"
+
+4) "What do you expect from a professional partnership—regular updates or strategic guidance?"
+
+If any answer is unclear, gently ask for elaboration (e.g., 'Can you elaborate on growth?').
+Once all questions are answered, say "Thank you for your time," and end the call.
 
 Ensure to include the entire conversation in 'raw_transcript' in your final callback to /receive-data.
 DO NOT ask any unrelated questions.`;
