@@ -100,11 +100,3 @@ The application uses several key tables:
 - Database connections are secured with parameterized queries
 - Phone numbers are validated before processing
 
-## License
-
-[Your License Choice]
-
-## Acknowledgments
-
-- Built with Replit
-- Powered by Twilio and ElevenLabs
