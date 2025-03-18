@@ -137,6 +137,8 @@ DO NOT ask any unrelated questions.`;
           call_sid,
           called_number,
           contact_name: contact.first_name,
+          contact_id: contact.id,
+          user_id: contact.user_id,
           contact_status: 'approved',
           raw_transcript: ''
         },
