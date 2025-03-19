@@ -31,26 +31,23 @@ function initialize(connectionString) {
   };
 
   // Determine environment and configure SSL
-  const isProduction = process.env.REPL_SLUG || process.env.REPL_ID;
   const isSupabase = dbUrl?.includes('supabase.co');
   console.log('Environment detection:', {
-    isProduction,
+    REPL_SLUG: process.env.REPL_SLUG,
+    REPL_ID: process.env.REPL_ID,
     dbUrl: dbUrl ? dbUrl.substring(0, 10) + '...' : 'undefined',
     isSupabase
   });
 
-  // Configure SSL based on environment
+  // Single, definitive SSL configuration
   poolConfig.ssl = isSupabase ? {
-    rejectUnauthorized: true 
+    rejectUnauthorized: true,
+    ca: require('fs').readFileSync('/etc/ssl/certs/ca-certificates.crt').toString()
   } : {
     rejectUnauthorized: false
   };
-
-  // Configure SSL based on environment
-  poolConfig.ssl = {
-    rejectUnauthorized: false
-  };
-  console.log('SSL Configuration:', poolConfig.ssl);
+  
+  console.log('Final SSL Configuration:', poolConfig.ssl);
   
   console.log('Creating pool with config:', {
     ...poolConfig,
