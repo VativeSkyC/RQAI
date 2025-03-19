@@ -1,3 +1,4 @@
+
 const { Pool } = require('pg');
 const retryPromised = require('retry-as-promised').default;
 
@@ -27,7 +28,7 @@ function initialize(connectionString) {
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
-    ssl: { rejectUnauthorized: true }
+    ssl: { rejectUnauthorized: false }
   };
 
   console.log('Creating pool with config:', {
