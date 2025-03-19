@@ -24,9 +24,9 @@ function initialize(connectionString) {
     connectionTimeoutMillis: 10000
   };
 
-  // Configure SSL based on environment - in production we need proper SSL
+  // Simple SSL configuration that works in both environments
   poolConfig.ssl = {
-    rejectUnauthorized: dbUrl && dbUrl.includes('supabase.co')
+    rejectUnauthorized: false
   };
   
   console.log('Creating pool with config:', {
