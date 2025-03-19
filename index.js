@@ -305,28 +305,13 @@ function startServer(port, fallbackIndex = 0) {
       console.log('No existing ngrok processes to kill or error:', killError.message);
     }
 
-    // Simplified ngrok setup approach
-    let ngrokOptions = {
-      addr: activePort, // Use the active port that was successfully bound
+    // Configure ngrok with fixed subdomain
+    const ngrokOptions = {
+      addr: activePort,
+      subdomain: 'ai-relationship-agent',
+      authtoken: process.env.NGROK_AUTH_TOKEN,
       onLogEvent: (message) => console.log(`NGROK LOG: ${message}`),
     };
-
-    // Add authtoken and subdomain if available
-    if (process.env.NGROK_AUTH_TOKEN) {
-      ngrokOptions.authtoken = process.env.NGROK_AUTH_TOKEN;
-      console.log('✅ Found NGROK_AUTH_TOKEN in environment variables');
-
-      // Only try to use subdomain if we have an auth token
-      if (process.env.NGROK_SUBDOMAIN) {
-        ngrokOptions.subdomain = process.env.NGROK_SUBDOMAIN;
-        console.log(`✅ Using custom subdomain: ${ngrokOptions.subdomain}`);
-      } else {
-        ngrokOptions.subdomain = 'ai-relationship-agent';
-        console.log(`✅ Using default subdomain: ${ngrokOptions.subdomain}`);
-      }
-    } else {
-      console.warn('⚠️ NGROK_AUTH_TOKEN is not set. Using random URL.');
-    }
 
     // Connect to ngrok with our options
     console.log(`\n🔄 ESTABLISHING NGROK TUNNEL on port ${activePort}...`);
