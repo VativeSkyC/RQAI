@@ -6,6 +6,12 @@ let pool = null;
 
 // Initialize the pool with connection parameters
 function initialize(connectionString) {
+  console.log('=== Database Connection Initialization ===');
+  console.log('Environment:', {
+    REPL_SLUG: process.env.REPL_SLUG,
+    REPL_ID: process.env.REPL_ID,
+    NODE_ENV: process.env.NODE_ENV
+  });
   console.log('Initializing database connection with URL:', 
               connectionString ? 'CONNECTION_STRING_PROVIDED' : 'No connection string provided');
   
@@ -24,10 +30,19 @@ function initialize(connectionString) {
     connectionTimeoutMillis: 10000
   };
 
-  // Simple SSL configuration that works in both environments
+  // Determine environment and configure SSL
+  const isProduction = process.env.REPL_SLUG || process.env.REPL_ID;
+  console.log('Environment detection:', {
+    isProduction,
+    dbUrl: dbUrl ? dbUrl.substring(0, 10) + '...' : 'undefined',
+    isSupabase: dbUrl?.includes('supabase.co')
+  });
+
+  // Configure SSL based on environment
   poolConfig.ssl = {
     rejectUnauthorized: false
   };
+  console.log('SSL Configuration:', poolConfig.ssl);
   
   console.log('Creating pool with config:', {
     ...poolConfig,
