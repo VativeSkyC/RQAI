@@ -9,9 +9,15 @@ function initialize(connectionString) {
   console.log('Initializing database connection with URL:', 
               connectionString ? 'CONNECTION_STRING_PROVIDED' : 'No connection string provided');
   
+  // Get connection string and modify for production pooling if needed
+  let dbUrl = connectionString || process.env.DATABASE_URL;
+  if (dbUrl && !dbUrl.includes('localhost')) {
+    dbUrl = dbUrl.replace('.us-east-2', '-pooler.us-east-2');
+  }
+  
   // Create connection configuration
   const poolConfig = {
-    connectionString: connectionString || process.env.DATABASE_URL,
+    connectionString: dbUrl,
     ssl: {
       rejectUnauthorized: false
     }
