@@ -24,6 +24,9 @@ function initialize(connectionString) {
   poolConfig.max = 20;
   poolConfig.idleTimeoutMillis = 30000;
   poolConfig.connectionTimeoutMillis = 10000;
+  poolConfig.ssl = {
+    rejectUnauthorized: false
+  };
   
   console.log('Creating pool with config:', {
     ...poolConfig,
