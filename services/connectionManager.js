@@ -4,7 +4,6 @@ const retryPromised = require('retry-as-promised').default;
 
 let pool = null;
 
-// Initialize the pool with connection parameters
 function initialize(connectionString) {
   console.log('=== Database Connection Initialization ===');
   console.log('Environment:', {
@@ -12,34 +11,27 @@ function initialize(connectionString) {
     REPL_ID: process.env.REPL_ID,
     NODE_ENV: process.env.NODE_ENV
   });
-  console.log('Initializing database connection with URL:', 
-              connectionString ? 'CONNECTION_STRING_PROVIDED' : 'No connection string provided');
 
-  // Get connection string and modify for production pooling if needed
   let dbUrl = connectionString || process.env.DATABASE_URL;
-  // Don't modify Supabase URLs - they're already configured for pooling
   if (dbUrl && !dbUrl.includes('supabase.co')) {
     dbUrl = dbUrl.replace('.us-east-2', '-pooler.us-east-2');
   }
 
-  // Create connection configuration
   const poolConfig = {
     connectionString: dbUrl,
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
-    ssl: { rejectUnauthorized: false }
+    ssl: process.env.NODE_ENV === 'production' ? true : false
   };
 
   console.log('Creating pool with config:', {
     ...poolConfig,
-    password: poolConfig.password ? '***HIDDEN***' : undefined,
-    connectionString: poolConfig.connectionString ? '***HIDDEN***' : undefined
+    connectionString: '***HIDDEN***'
   });
 
   pool = new Pool(poolConfig);
 
-  // Log connection events for debugging
   pool.on('connect', () => {
     console.log('Database connection established');
   });
@@ -51,7 +43,6 @@ function initialize(connectionString) {
   return pool;
 }
 
-// Function to get a pool connection with retry logic
 async function getClient() {
   if (!pool) {
     throw new Error('Database pool not initialized. Call initialize() first.');
@@ -65,18 +56,17 @@ async function getClient() {
     } catch (err) {
       console.error('PostgreSQL connection error:', err.message);
       console.log('Retrying in 5 seconds...');
-      throw err; // Throw the error so retry can catch it
+      throw err;
     }
   }, {
-    max: 5, // Maximum number of retries
-    timeout: 60000, // Overall timeout in milliseconds
-    backoffBase: 1000, // Initial backoff duration in milliseconds
-    backoffExponent: 1.5, // Exponent for exponential backoff
+    max: 5,
+    timeout: 60000,
+    backoffBase: 1000,
+    backoffExponent: 1.5,
     report: (message) => console.log(`Retry status: ${message}`)
   });
 }
 
-// Function to keep the connection alive
 async function keepAlive() {
   if (!pool) {
     console.log('No pool to keep alive. Initialize database first.');
@@ -97,7 +87,6 @@ async function keepAlive() {
   }
 }
 
-// Test connection function
 async function testConnection() {
   if (!pool) {
     console.log('No pool to test. Initialize database first.');
