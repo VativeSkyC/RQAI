@@ -1,6 +1,6 @@
 
 const { Pool } = require('pg');
-const retry = require('retry-as-promised');
+const retryPromised = require('retry-as-promised').default;
 
 let pool = null;
 
@@ -51,7 +51,7 @@ async function getClient() {
     throw new Error('Database pool not initialized. Call initialize() first.');
   }
   
-  return retry(async () => {
+  return retryPromised(async () => {
     try {
       const client = await pool.connect();
       console.log('Pool connection acquired');
