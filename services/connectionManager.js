@@ -19,19 +19,15 @@ function initialize(connectionString) {
   // Create connection configuration
   const poolConfig = {
     connectionString: dbUrl,
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000
-  };
-
-  // Handle SSL based on connection type
-  if (dbUrl && dbUrl.includes('supabase.co')) {
-    poolConfig.ssl = true;
-  } else {
-    poolConfig.ssl = {
+    ssl: {
       rejectUnauthorized: false
-    };
-  }
+    }
+  };
+  
+  // Add common options
+  poolConfig.max = 20;
+  poolConfig.idleTimeoutMillis = 30000;
+  poolConfig.connectionTimeoutMillis = 10000;
   
   console.log('Creating pool with config:', {
     ...poolConfig,
