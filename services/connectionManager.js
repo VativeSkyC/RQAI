@@ -19,12 +19,14 @@ function initialize(connectionString) {
   // Create connection configuration
   const poolConfig = {
     connectionString: dbUrl,
-    ssl: {
-      rejectUnauthorized: false
-    },
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000
+  };
+
+  // Configure SSL based on environment - in production we need proper SSL
+  poolConfig.ssl = {
+    rejectUnauthorized: dbUrl && dbUrl.includes('supabase.co')
   };
   
   console.log('Creating pool with config:', {
