@@ -11,7 +11,8 @@ function initialize(connectionString) {
   
   // Get connection string and modify for production pooling if needed
   let dbUrl = connectionString || process.env.DATABASE_URL;
-  if (dbUrl && !dbUrl.includes('localhost')) {
+  // Don't modify Supabase URLs - they're already configured for pooling
+  if (dbUrl && !dbUrl.includes('supabase.co')) {
     dbUrl = dbUrl.replace('.us-east-2', '-pooler.us-east-2');
   }
   
