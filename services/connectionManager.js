@@ -1,4 +1,3 @@
-
 const { Pool } = require('pg');
 const retryPromised = require('retry-as-promised').default;
 
@@ -14,50 +13,29 @@ function initialize(connectionString) {
   });
   console.log('Initializing database connection with URL:', 
               connectionString ? 'CONNECTION_STRING_PROVIDED' : 'No connection string provided');
-  
+
   // Get connection string and modify for production pooling if needed
   let dbUrl = connectionString || process.env.DATABASE_URL;
   // Don't modify Supabase URLs - they're already configured for pooling
   if (dbUrl && !dbUrl.includes('supabase.co')) {
     dbUrl = dbUrl.replace('.us-east-2', '-pooler.us-east-2');
   }
-  
+
   // Create connection configuration
   const poolConfig = {
     connectionString: dbUrl,
     max: 20,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000
+    connectionTimeoutMillis: 10000,
+    ssl: { rejectUnauthorized: true }
   };
 
-  // Determine environment and configure SSL
-  const isProduction = process.env.REPL_SLUG || process.env.REPL_ID;
-  const isSupabase = dbUrl?.includes('supabase.co');
-  console.log('Environment detection:', {
-    isProduction,
-    dbUrl: dbUrl ? dbUrl.substring(0, 10) + '...' : 'undefined',
-    isSupabase
-  });
-
-  // Configure SSL based on environment
-  poolConfig.ssl = isSupabase ? {
-    rejectUnauthorized: true 
-  } : {
-    rejectUnauthorized: false
-  };
-
-  // Configure SSL based on environment
-  poolConfig.ssl = {
-    rejectUnauthorized: false
-  };
-  console.log('SSL Configuration:', poolConfig.ssl);
-  
   console.log('Creating pool with config:', {
     ...poolConfig,
     password: poolConfig.password ? '***HIDDEN***' : undefined,
     connectionString: poolConfig.connectionString ? '***HIDDEN***' : undefined
   });
-  
+
   pool = new Pool(poolConfig);
 
   // Log connection events for debugging
@@ -77,7 +55,7 @@ async function getClient() {
   if (!pool) {
     throw new Error('Database pool not initialized. Call initialize() first.');
   }
-  
+
   return retryPromised(async () => {
     try {
       const client = await pool.connect();
@@ -103,7 +81,7 @@ async function keepAlive() {
     console.log('No pool to keep alive. Initialize database first.');
     return;
   }
-  
+
   let client;
   try {
     client = await pool.connect();
@@ -124,7 +102,7 @@ async function testConnection() {
     console.log('No pool to test. Initialize database first.');
     return false;
   }
-  
+
   let client;
   try {
     client = await pool.connect();
