@@ -19,7 +19,7 @@ function initialize(connectionString) {
   // Create connection configuration
   const poolConfig = {
     connectionString: dbUrl,
-    ssl: {
+    ssl: dbUrl.includes('supabase.co') ? true : {
       rejectUnauthorized: false
     }
   };
