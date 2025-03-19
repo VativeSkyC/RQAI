@@ -32,11 +32,19 @@ function initialize(connectionString) {
 
   // Determine environment and configure SSL
   const isProduction = process.env.REPL_SLUG || process.env.REPL_ID;
+  const isSupabase = dbUrl?.includes('supabase.co');
   console.log('Environment detection:', {
     isProduction,
     dbUrl: dbUrl ? dbUrl.substring(0, 10) + '...' : 'undefined',
-    isSupabase: dbUrl?.includes('supabase.co')
+    isSupabase
   });
+
+  // Configure SSL based on environment
+  poolConfig.ssl = isSupabase ? {
+    rejectUnauthorized: true 
+  } : {
+    rejectUnauthorized: false
+  };
 
   // Configure SSL based on environment
   poolConfig.ssl = {
