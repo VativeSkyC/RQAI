@@ -61,6 +61,10 @@ router.post('/twilio-personalization', async (req, res) => {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
+    // Format the phone number properly if needed
+    const formattedPhoneNumber = caller_id.startsWith('+') ? caller_id : `+${caller_id}`;
+    console.log(`Formatted phone number: ${formattedPhoneNumber}`);
+
     // Look up contact info
     const pool = req.app.get('pool');
     const client = await pool.connect();
@@ -71,15 +75,15 @@ router.post('/twilio-personalization', async (req, res) => {
         INSERT INTO temp_calls (call_sid, phone_number, created_at)
         VALUES ($1, $2, NOW())
         ON CONFLICT (call_sid) DO UPDATE SET phone_number = EXCLUDED.phone_number
-      `, [call_sid, caller_id]);
+      `, [call_sid, formattedPhoneNumber]);
       
-      console.log(`Updated temp_calls with call_sid: ${call_sid}, phone_number: ${caller_id}`);
+      console.log(`Updated temp_calls with call_sid: ${call_sid}, phone_number: ${formattedPhoneNumber}`);
       const findContact = await client.query(`
         SELECT id, first_name, last_name, user_id
         FROM contacts 
         WHERE phone_number = $1 
         LIMIT 1
-      `, [caller_id]);
+      `, [formattedPhoneNumber]);
 
       // Log the call
       await client.query(`
@@ -94,7 +98,7 @@ router.post('/twilio-personalization', async (req, res) => {
       if (!contact) {
         const response = {
           dynamic_variables: {
-            caller_id,
+            caller_id: formattedPhoneNumber,
             call_sid,
             called_number,
             contact_status: 'unauthorized'
@@ -133,7 +137,7 @@ DO NOT ask any unrelated questions.`;
 
       const response = {
         dynamic_variables: {
-          caller_id,
+          caller_id: formattedPhoneNumber,
           call_sid,
           called_number,
           contact_name: contact.first_name,
