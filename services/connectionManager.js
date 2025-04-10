@@ -22,7 +22,9 @@ function initialize(connectionString) {
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
-    ssl: process.env.NODE_ENV === 'production' ? true : false
+    ssl: process.env.NODE_ENV === 'production' ? {
+      rejectUnauthorized: false
+    } : false
   };
 
   console.log('Creating pool with config:', {
