@@ -295,36 +295,79 @@ function startServer(port, fallbackIndex = 0) {
   console.log('📊 Starting keep-alive service...');
   keepAlive();
 
-  try {
-    // First, make sure we don't have any existing tunnels
+  // Check if we're running on Railway (has specific environment variables)
+  const isRailway = process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_PUBLIC_DOMAIN;
+
+  if (!isRailway) {
     try {
-      console.log('Cleaning up any existing ngrok tunnels...');
-      await ngrok.kill();
-      console.log('Successfully terminated any existing ngrok processes');
-    } catch (killError) {
-      console.log('No existing ngrok processes to kill or error:', killError.message);
+      // First, make sure we don't have any existing tunnels
+      try {
+        console.log('Cleaning up any existing ngrok tunnels...');
+        await ngrok.kill();
+        console.log('Successfully terminated any existing ngrok processes');
+      } catch (killError) {
+        console.log('No existing ngrok processes to kill or error:', killError.message);
+      }
+
+      // Configure ngrok with fixed subdomain
+      const ngrokOptions = {
+        addr: activePort,
+        subdomain: 'ai-relationship-agent',
+        authtoken: process.env.NGROK_AUTH_TOKEN,
+        onLogEvent: (message) => console.log(`NGROK LOG: ${message}`),
+      };
+
+      // Connect to ngrok with our options
+      console.log(`\n🔄 ESTABLISHING NGROK TUNNEL on port ${activePort}...`);
+      console.log('Options:', JSON.stringify({
+        ...ngrokOptions,
+        authtoken: ngrokOptions.authtoken ? '***HIDDEN***' : undefined
+      }, null, 2));
+
+      const url = await ngrok.connect(ngrokOptions);
+
+      console.log('\n\n');
+      console.log('================================================================');
+      console.log(`✅ NGROK TUNNEL SUCCESSFULLY ESTABLISHED!`);
+      console.log('================================================================');
+      console.log(`📝 IMPORTANT URLS:`);
+      console.log(`🌍 Main Site: ${url}`);
+      console.log(`📊 Dashboard: ${url}/dashboard.html`);
+      console.log(`🔈 Voice Webhook: ${url}/voice`);
+      console.log(`📥 Data Webhook: ${url}/receive-data`);
+      console.log('----------------------------------------------------------------');
+      console.log(`Set Twilio Webhook URL to: ${url}/voice`);
+      console.log(`Set ElevenLabs Webhook URL to: ${url}/receive-data`);
+      console.log('================================================================\n\n');
+
+      // Store ngrok URL in global variable for use throughout the application
+      global.ngrokUrl = url;
+    } catch (error) {
+      console.error('\n\n⚠️ ERROR ESTABLISHING NGROK TUNNEL:', error.message);
+
+      if (error.message.includes('account may not run more than 1 online ngrok processes')) {
+        console.log('\n👉 You already have an ngrok tunnel running elsewhere.');
+        console.log('👉 Please close other ngrok instances before starting a new one.');
+      } else if (error.message.includes('subdomain')) {
+        console.log('\n👉 The subdomain "ai-relationship-agent" is currently in use.');
+        console.log('👉 Try setting a different NGROK_SUBDOMAIN in your environment variables.');
+      } else if (error.message.includes('authtoken')) {
+        console.log('\n👉 Your NGROK_AUTH_TOKEN may be invalid or expired.');
+        console.log('👉 Get a new token at https://dashboard.ngrok.com/get-started/your-authtoken');
+      }
+
+      console.log('\n⚙️ Server is still running locally at:');
+      console.log(`🔗 Local URL: http://localhost:${PORT}`);
+      console.log(`🔗 Replit URL: https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`);
     }
-
-    // Configure ngrok with fixed subdomain
-    const ngrokOptions = {
-      addr: activePort,
-      subdomain: 'ai-relationship-agent',
-      authtoken: process.env.NGROK_AUTH_TOKEN,
-      onLogEvent: (message) => console.log(`NGROK LOG: ${message}`),
-    };
-
-    // Connect to ngrok with our options
-    console.log(`\n🔄 ESTABLISHING NGROK TUNNEL on port ${activePort}...`);
-    console.log('Options:', JSON.stringify({
-      ...ngrokOptions,
-      authtoken: ngrokOptions.authtoken ? '***HIDDEN***' : undefined
-    }, null, 2));
-
-    const url = await ngrok.connect(ngrokOptions);
-
+  } else {
+    // Running on Railway - use Railway's domain
+    const domain = process.env.RAILWAY_PUBLIC_DOMAIN;
+    const url = `https://${domain}`;
+    
     console.log('\n\n');
     console.log('================================================================');
-    console.log(`✅ NGROK TUNNEL SUCCESSFULLY ESTABLISHED!`);
+    console.log(`✅ RUNNING ON RAILWAY!`);
     console.log('================================================================');
     console.log(`📝 IMPORTANT URLS:`);
     console.log(`🌍 Main Site: ${url}`);
@@ -335,26 +378,9 @@ function startServer(port, fallbackIndex = 0) {
     console.log(`Set Twilio Webhook URL to: ${url}/voice`);
     console.log(`Set ElevenLabs Webhook URL to: ${url}/receive-data`);
     console.log('================================================================\n\n');
-
-    // Store ngrok URL in global variable for use throughout the application
+    
+    // Store URL in global variable for use throughout the application
     global.ngrokUrl = url;
-  } catch (error) {
-    console.error('\n\n⚠️ ERROR ESTABLISHING NGROK TUNNEL:', error.message);
-
-    if (error.message.includes('account may not run more than 1 online ngrok processes')) {
-      console.log('\n👉 You already have an ngrok tunnel running elsewhere.');
-      console.log('👉 Please close other ngrok instances before starting a new one.');
-    } else if (error.message.includes('subdomain')) {
-      console.log('\n👉 The subdomain "ai-relationship-agent" is currently in use.');
-      console.log('👉 Try setting a different NGROK_SUBDOMAIN in your environment variables.');
-    } else if (error.message.includes('authtoken')) {
-      console.log('\n👉 Your NGROK_AUTH_TOKEN may be invalid or expired.');
-      console.log('👉 Get a new token at https://dashboard.ngrok.com/get-started/your-authtoken');
-    }
-
-    console.log('\n⚙️ Server is still running locally at:');
-    console.log(`🔗 Local URL: http://localhost:${PORT}`);
-    console.log(`🔗 Replit URL: https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`);
   }
 });
 
