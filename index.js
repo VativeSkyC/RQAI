@@ -362,7 +362,7 @@ function startServer(port, fallbackIndex = 0) {
     }
   } else {
     // Running on Railway - use Railway's domain
-    const domain = process.env.RAILWAY_PUBLIC_DOMAIN;
+    const domain = process.env.RAILWAY_PUBLIC_DOMAIN || "rqai-production.up.railway.app";
     const url = `https://${domain}`;
     
     console.log('\n\n');
